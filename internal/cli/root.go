@@ -18,12 +18,14 @@ const SchemaVersion = 1
 type globals struct {
 	kubeconfig string
 	format     string
+	cacheDir   string
+	version    string
 }
 
 // NewRoot builds the command tree. Kept separate from Execute so tests can run commands
 // against buffers.
 func NewRoot(version string) *cobra.Command {
-	g := &globals{}
+	g := &globals{version: version}
 	root := &cobra.Command{
 		Use:   "kubestrata",
 		Short: "Time-layered inventory of Kubernetes clusters for migration planning",
@@ -37,7 +39,9 @@ func NewRoot(version string) *cobra.Command {
 	root.PersistentFlags().StringVar(&g.kubeconfig, "kubeconfig", "",
 		"path to a kubeconfig file (default: KUBECONFIG rules, then ~/.kube/config)")
 	root.PersistentFlags().StringVar(&g.format, "format", "text", "output format: text or json")
-	root.AddCommand(newContextsCmd(g))
+	root.PersistentFlags().StringVar(&g.cacheDir, "cache-dir", "",
+		"snapshot cache (default: $KUBESTRATA_CACHE_DIR or the user cache dir)")
+	root.AddCommand(newContextsCmd(g), newCollectCmd(g), newCacheCmd(g))
 	return root
 }
 

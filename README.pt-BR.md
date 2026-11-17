@@ -17,16 +17,18 @@ migração aparece como um anel no destino.
 ## Comandos (meta da v0.1.0)
 
 ```sh
-kubestrata contexts                       # contextos do kubeconfig (já disponível)
-kubestrata collect -c origem -c destino   # snapshot somente leitura no cache local
-kubestrata render -c origem --open        # visão radial de um cluster
-kubestrata compare -c origem -c destino   # visão lado a lado
+kubestrata contexts                       # contextos do kubeconfig (disponível)
+kubestrata collect -c source -c target    # snapshot somente leitura no cache local (disponível)
+kubestrata cache ls                       # snapshots no cache (disponível)
+kubestrata render -c source --open        # visão radial de um cluster
+kubestrata compare -c source -c target    # visão lado a lado
 kubestrata                                # TUI interativa
 ```
 
 ## Design
 
-Ver [docs/design.md](docs/design.md) (em inglês).
+Ver [docs/design.pt-BR.md](docs/design.pt-BR.md) (versão oficial em inglês:
+[docs/design.md](docs/design.md)).
 
 ## Licença
 

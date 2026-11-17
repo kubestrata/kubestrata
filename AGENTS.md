@@ -28,7 +28,10 @@ Ferramenta de domínio com repo próprio, como o `costgate`.
 |---|---|---|
 | `cmd/kubestrata` | Go 1.27 | versão por `-X main.version` ou `debug.ReadBuildInfo` |
 | `internal/cli` | Cobra + Fang v2 (`charm.land/fang/v2`) | `--format text\|json`, JSON com `schema_version` 1 |
-| `internal/kube` | client-go v0.37 | kubeconfig (regras padrão, exec plugins); nunca expõe credencial |
+| `internal/kube` | client-go v0.37 | kubeconfig (regras padrão, exec plugins); `ClusterSource` só list/get; Secrets via Table |
+| `internal/collect` | projeção por kind | `Source` (interface) testável sem cluster; agregação, arestas, fingerprint, distro |
+| `internal/snapshot` | contrato JSON `schema_version` 1 | gzip; recusa versão maior |
+| `internal/cache` | `~/Library/Caches/kubestrata` (`KUBESTRATA_CACHE_DIR`) | `clusters/<id>/<stamp>.json.gz` + `contexts.json`; escrita atômica |
 | TUI (F1) | Bubble Tea v2, Bubbles v2, Lip Gloss v2, Huh v2 (`charm.land/*`) | a implementar |
 | Site (F1) | HTML+CSS+JS inline, zero CDN, canvas 2D, layout polar determinístico | a implementar; modelo de referência: `leosavio-org/knowledge/views/grafo.html` |
 
@@ -38,14 +41,18 @@ Design completo: `docs/design.md`.
 
 > Última atualização: 2026-11-17
 
-1ª sessão: repo criado (privado), scaffold com `contexts` funcionando (tabela Lip Gloss e JSON),
-testes de kubeconfig (inclui teste de não vazamento de token e args de exec), `make check` verde.
-Design F1 em `docs/design.md`. Ambiente de teste com dois clusters locais e datas de criação
-retroativas (lab `kubito`) em avaliação com o operador.
+1ª sessão (2026-11-17): repo criado (privado); `contexts`, `collect` e `cache ls|prune`
+funcionando. `collect` usa discovery, list paginado, Secrets pela Table do servidor (só metadata,
+linha que não for `PartialObjectMetadata` é recusada), projeção sanitizada, agregação de
+pods/RS/RC/Jobs no dono, arestas e fingerprint. Testes no fixture `internal/collect/testdata/cluster.yaml`
+(Helm, OpenShift simulado, operator, órfãos, valores `LEAK-` semeados) e smoke real no cluster do
+OrbStack (71 recursos, 0 erros, cache `0700`/`0600`). Design EN + PT-BR. Lab de teste com dois
+clusters kind e datas retroativas no etcd: aprovado pelo operador, repo `kuberito` (nome a
+confirmar).
 
 ## Próximos passos
 
-- [ ] F1: `collect` (discovery, list paginado, projeção sanitizada, identidade do cluster) + cache com TTL
+- [x] F1: `collect` (discovery, list paginado, projeção sanitizada, identidade do cluster) + cache com TTL
 - [ ] F1: `render` (site radial, escalas 5d/10d/30d/log, eixo criado/alterado, filtros, busca, painel)
 - [ ] F1: `compare` (identidade, fingerprint por kind, tabela de cobertura)
 - [ ] F1: TUI básica; teste de não vazamento sobre cache e site; golden de render; e2e em 2 clusters locais
@@ -54,8 +61,10 @@ retroativas (lab `kubito`) em avaliação com o operador.
 ## Comandos essenciais
 
 ```sh
-make check        # vet + staticcheck (se instalado) + test -race + build
+make check        # gofmt + vet + staticcheck (se instalado) + test -race + build
+make fmt-fix      # gofmt -w
 make smoke        # binário contra o kubeconfig local (sem acessar cluster)
+KUBESTRATA_CACHE_DIR=/tmp/ks bin/kubestrata collect -c <ctx> --force   # coleta real, cache isolado
 ```
 
 ## Fontes de verdade locais
@@ -76,5 +85,8 @@ make smoke        # binário contra o kubeconfig local (sem acessar cluster)
   `/site/` e `*.snapshot.json*`.
 - `render`/`compare` não acessam cluster e não dependem de relógio: referência = `collected_at`.
 - Sem telemetria no binário.
-- Docs públicas em inglês com `README.pt-BR.md`; AGENTS.md e ADRs em PT-BR.
+- Idioma (operador, 2026-11-17, vale para `kubestrata` e `kuberito`): inglês é o principal em
+  código, identificadores, contextos, nomes de cenário e docs; cada doc pública tem a tradução em
+  arquivo separado `*.pt-BR.md` (ex.: `docs/design.md` + `docs/design.pt-BR.md`). AGENTS.md e
+  ADRs em PT-BR (regra do portfólio, evolution-log entrada 7).
 - Licença: MIT (`LICENSE`). Entrega a usuários segue `leosavio-org/knowledge/templates/licencas-e-creditos.md`.

@@ -1,5 +1,7 @@
 # kubestrata design
 
+[Português](design.pt-BR.md)
+
 Status: pre-release design for v0.1.0 (F1). Decisions here are current until code says otherwise.
 
 ## Goal
@@ -78,6 +80,9 @@ The snapshot stores a curated projection, never raw objects.
 | literal `env[].value`, `args`, `command` | names only, values dropped |
 | ConfigMap | key names + content hash (for drift), no values |
 | `managedFields` | only `manager`, `operation`, `time`, `subresource` |
+| OpenShift Route `spec.tls.key` / `certificate` | dropped: only the termination type is kept |
+| Cloud identity annotations (IRSA role ARN, workload identity ids) | only the identity type (`aws-irsa`, ...), never the ARN or id |
+| Annotations in general | not stored; facts are derived from the few that matter |
 | Cache and site | `0700` / `0600` under the user cache dir, never in git |
 | XSS in the local page | names and labels are untrusted: `json.Marshal` (escapes `<>&`) writes `data/*.js`, the page renders with `textContent` |
 
@@ -103,13 +108,14 @@ of the cache or the site.
   "schema_version": 1,
   "tool": {"name": "kubestrata", "version": "0.1.0"},
   "collected_at": "2026-11-17T12:12:00Z",
-  "cluster": {"id": "3f9a1c0b7e21", "context": "origin", "server_host": "api.example:6443",
-              "distro": "openshift", "version": "v1.27.x",
+  "cluster": {"id": "3f9a1c0b7e21", "context": "source", "server_host": "api.example:6443",
+              "distro": "openshift", "distro_signals": ["group route.openshift.io"], "version": "v1.27.x",
               "nodes": {"count": 12, "arch": {"amd64": 12}, "zones": ["a", "b"]}},
+  "namespaces": [{"name": "payments", "team": "team-payments", "created": "2024-06-01T00:00:00Z"}],
   "resources": [{
     "id": "apps/Deployment/payments/api", "cat": "workload", "ns": "payments", "name": "api",
     "created": "2025-04-24T10:00:00Z", "changed": "2026-10-02T18:30:00Z",
-    "manager": "helm", "app": "payments-api", "team": "team-pay", "owner": null,
+    "manager": "helm", "app": "payments-api", "team": "team-payments",
     "facts": {"replicas": 3, "ready": 3, "pods": 3, "restarts": 1, "images": ["registry/pay/api:2.14"]},
     "fp": "sha256:..."
   }],
@@ -118,9 +124,28 @@ of the cache or the site.
 }
 ```
 
-`rel` is one of `routes`, `selects`, `mounts`, `env-from`, `uses-sa`, `owns`. Edges are computed in
-Go (selector matching, volume and env references), not in the browser. A consumer that receives a
-higher `schema_version` than it supports refuses the document.
+| `rel` | From → to |
+|---|---|
+| `routes` | Ingress, Route, HTTPRoute → Service |
+| `selects` | Service, PodDisruptionBudget → workload (selector ⊆ pod template labels) |
+| `mounts` | workload → PVC, Secret, ConfigMap (volumes); VolumeSnapshot → PVC |
+| `env-from` | workload → Secret, ConfigMap (`envFrom`, `valueFrom`) |
+| `uses-sa` | workload → ServiceAccount |
+| `pull-secret` | workload → Secret (`imagePullSecrets`) |
+| `owns` | controller owner → shown object (e.g. a custom resource → its Deployment) |
+| `binds` | PVC → PersistentVolume, StorageClass |
+| `tls` | Ingress, Gateway → Secret |
+| `scales` | HPA → target |
+| `grants` | RoleBinding → Role, ServiceAccount |
+| `attaches` | HTTPRoute → Gateway |
+
+Edges are computed in Go, not in the browser. A reference to an object that does not exist goes to
+`facts.missing_refs`; a Service whose selector matches no workload gets `facts.selects_none`. A
+consumer that receives a higher `schema_version` than it supports refuses the document.
+
+Pods, ReplicaSets, ReplicationControllers and Jobs are folded into the nearest shown owner
+(`pods`, `ready`, `restarts`, `pod_newest`, `pod_oldest`, `archs`, `last_rollout`, `jobs`,
+`last_run`). Without an owner they are shown with `facts.orphan`.
 
 ## Comparison
 

@@ -1,4 +1,4 @@
-.PHONY: build test vet lint check tidy smoke
+.PHONY: build test vet fmt lint check tidy smoke
 
 BIN := bin/kubestrata
 
@@ -11,7 +11,14 @@ test:
 vet:
 	go vet ./...
 
-lint: vet
+# Fails when a file is not gofmt-formatted; `make fmt-fix` rewrites them.
+fmt:
+	@out=$$(gofmt -l .); if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
+
+fmt-fix:
+	gofmt -w .
+
+lint: fmt vet
 	@if [ -x "$$HOME/go/bin/staticcheck" ]; then $$HOME/go/bin/staticcheck ./...; else echo "staticcheck not installed, skipped"; fi
 
 check: lint test build

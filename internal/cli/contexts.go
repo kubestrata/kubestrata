@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"charm.land/lipgloss/v2"
-	"charm.land/lipgloss/v2/table"
 	"github.com/spf13/cobra"
 
 	"github.com/leosavio/kubestrata/internal/kube"
@@ -37,17 +36,7 @@ func newContextsCmd(g *globals) *cobra.Command {
 				_, err := fmt.Fprintln(out, "no contexts in kubeconfig")
 				return err
 			}
-			head := lipgloss.NewStyle().Bold(true).Padding(0, 1)
-			cell := lipgloss.NewStyle().Padding(0, 1)
-			t := table.New().
-				Border(lipgloss.NormalBorder()).
-				Headers("", "CONTEXT", "SERVER", "USER", "AUTH", "NAMESPACE").
-				StyleFunc(func(row, _ int) lipgloss.Style {
-					if row == table.HeaderRow {
-						return head
-					}
-					return cell
-				})
+			t := newTable("", "CONTEXT", "SERVER", "USER", "AUTH", "NAMESPACE")
 			for _, c := range ctxs {
 				mark := ""
 				if c.Current {

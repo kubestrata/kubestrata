@@ -17,10 +17,11 @@ shows up as a ring in the target.
 ## Commands (v0.1.0 target)
 
 ```sh
-kubestrata contexts                       # kubeconfig contexts (available now)
-kubestrata collect -c origin -c target    # read-only snapshot into the local cache
-kubestrata render -c origin --open        # radial view of one cluster
-kubestrata compare -c origin -c target    # side-by-side view
+kubestrata contexts                       # kubeconfig contexts (available)
+kubestrata collect -c source -c target    # read-only snapshot into the local cache (available)
+kubestrata cache ls                       # cached snapshots (available)
+kubestrata render -c source --open        # radial view of one cluster
+kubestrata compare -c source -c target    # side-by-side view
 kubestrata                                # interactive TUI
 ```
 
