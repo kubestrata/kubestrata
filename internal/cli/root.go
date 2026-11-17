@@ -41,7 +41,7 @@ func NewRoot(version string) *cobra.Command {
 	root.PersistentFlags().StringVar(&g.format, "format", "text", "output format: text or json")
 	root.PersistentFlags().StringVar(&g.cacheDir, "cache-dir", "",
 		"snapshot cache (default: $KUBESTRATA_CACHE_DIR or the user cache dir)")
-	root.AddCommand(newContextsCmd(g), newCollectCmd(g), newCacheCmd(g))
+	root.AddCommand(newContextsCmd(g), newCollectCmd(g), newCacheCmd(g), newRenderCmd(g))
 	return root
 }
 

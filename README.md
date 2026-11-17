@@ -20,7 +20,7 @@ shows up as a ring in the target.
 kubestrata contexts                       # kubeconfig contexts (available)
 kubestrata collect -c source -c target    # read-only snapshot into the local cache (available)
 kubestrata cache ls                       # cached snapshots (available)
-kubestrata render -c source --open        # radial view of one cluster
+kubestrata render -c source --open        # radial view, offline HTML (available)
 kubestrata compare -c source -c target    # side-by-side view
 kubestrata                                # interactive TUI
 ```

@@ -305,6 +305,9 @@ func kindFacts(it *item, u *unstructured.Unstructured) bool {
 			f["stateful"] = true
 		}
 	case "Service":
+		if ns == "default" && it.res.Name == "kubernetes" {
+			return false // the API server's own Service, recreated by every control plane
+		}
 		t := s(spec["type"])
 		if t == "" {
 			t = "ClusterIP"

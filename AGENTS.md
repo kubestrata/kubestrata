@@ -46,14 +46,18 @@ funcionando. `collect` usa discovery, list paginado, Secrets pela Table do servi
 linha que não for `PartialObjectMetadata` é recusada), projeção sanitizada, agregação de
 pods/RS/RC/Jobs no dono, arestas e fingerprint. Testes no fixture `internal/collect/testdata/cluster.yaml`
 (Helm, OpenShift simulado, operator, órfãos, valores `LEAK-` semeados) e smoke real no cluster do
-OrbStack (71 recursos, 0 erros, cache `0700`/`0600`). Design EN + PT-BR. Lab de teste com dois
-clusters kind e datas retroativas no etcd: aprovado pelo operador, repo `kuberito` (nome a
-confirmar).
+OrbStack (71 recursos, 0 erros, cache `0700`/`0600`). Design EN + PT-BR.
+
+`render` pronto: `web/` (HTML, CSS, JS embutidos por `go:embed`), `internal/render` grava
+`index.html` + `data/<id>.js` + `json/<id>.json`, determinístico, CSP sem rede. Conferido no Chrome
+headless contra o lab `kuberito` (320 recursos, sem erro de JS) e com 20 000 recursos sintéticos
+(desenho em 10–16 ms). E2e `make lab-test` (`test/e2e`, tag `lab`) compara a coleta com a
+verdade-base do lab: 0 divergência, 0 vazamento.
 
 ## Próximos passos
 
 - [x] F1: `collect` (discovery, list paginado, projeção sanitizada, identidade do cluster) + cache com TTL
-- [ ] F1: `render` (site radial, escalas 5d/10d/30d/log, eixo criado/alterado, filtros, busca, painel)
+- [x] F1: `render` (site radial, escalas 5d/10d/30d/log/custom, eixo criado/alterado, filtros, busca, painel, cor por categoria/manager/time)
 - [ ] F1: `compare` (identidade, fingerprint por kind, tabela de cobertura)
 - [ ] F1: TUI básica; teste de não vazamento sobre cache e site; golden de render; e2e em 2 clusters locais
 - [ ] v0.1.0: CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, CI, release; depois tornar o repo público
@@ -64,6 +68,8 @@ confirmar).
 make check        # gofmt + vet + staticcheck (se instalado) + test -race + build
 make fmt-fix      # gofmt -w
 make smoke        # binário contra o kubeconfig local (sem acessar cluster)
+make lab-test     # e2e contra o lab kuberito rodando (pula se não houver lab)
+bin/kubestrata render -c <ctx> --open   # site offline a partir do cache
 KUBESTRATA_CACHE_DIR=/tmp/ks bin/kubestrata collect -c <ctx> --force   # coleta real, cache isolado
 ```
 

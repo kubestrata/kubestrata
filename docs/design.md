@@ -94,7 +94,7 @@ of the cache or the site.
 | Category | Kinds | Notes |
 |---|---|---|
 | workload | Deployment, StatefulSet, DaemonSet, CronJob, Job without owner, DeploymentConfig, orphan Pod and ReplicaSet | pods aggregated into their owner; an orphan pod is a migration warning |
-| network | Service, Ingress, Route, Gateway, HTTPRoute, NetworkPolicy | hosts and TLS in the panel |
+| network | Service (minus `default/kubernetes`), Ingress, Route, Gateway, HTTPRoute, NetworkPolicy | hosts and TLS in the panel |
 | config | ConfigMap (minus `kube-root-ca.crt`, `openshift-service-ca.crt`), Secret, ServiceAccount | `helm.sh/release.v1` Secrets grouped as Helm state |
 | storage | PVC, PV, StorageClass, VolumeSnapshot | cluster-scoped kinds get their own sector |
 | policy | HPA, PDB, ResourceQuota, LimitRange, Role, RoleBinding | PDBs affect drain and cutover |
@@ -178,6 +178,12 @@ Fang v2 over Cobra for commands; Bubble Tea v2, Bubbles v2, Lip Gloss v2 and Huh
 | `kubestrata render [-c ctx] [--scale 5d\|10d\|30d\|log] [--axis created\|changed] [-o dir] [--open]` | site from the cache |
 | `kubestrata compare -c source -c target [--open]` | side-by-side site from the cache |
 | `kubestrata cache ls\|prune [--keep 5]` | snapshot housekeeping |
+
+The page state lives in the URL hash (`#scale=log&axis=changed&color=manager&sel=<id>`), so a view
+can be bookmarked and checked headless. A Content-Security-Policy (`default-src 'none'`) keeps the
+page off the network. After the first draw the page writes `data-status`, `data-shown`,
+`data-draw-ms` and `data-total-ms` on `<body>` for automated checks. Measured in headless Chrome on
+an M4: 20 000 resources draw in about 10–16 ms (first paint about 50 ms, 4.8 MB data file).
 
 Site output (default under the user cache dir): `index.html` (inline CSS and JS, no CDN),
 `data/<cluster_id>.js` (`window.SNAP["<id>"] = {...}`; a script tag, because Chrome blocks

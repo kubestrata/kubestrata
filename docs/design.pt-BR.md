@@ -96,7 +96,7 @@ se qualquer um deles aparecer em qualquer byte do snapshot.
 | Categoria | Kinds | Observação |
 |---|---|---|
 | workload | Deployment, StatefulSet, DaemonSet, CronJob, Job sem dono, DeploymentConfig, Pod e ReplicaSet **órfãos** | pods agregados no dono; pod órfão é alerta de migração |
-| network | Service, Ingress, Route, Gateway, HTTPRoute, NetworkPolicy | hosts e TLS no painel |
+| network | Service (sem o `default/kubernetes`), Ingress, Route, Gateway, HTTPRoute, NetworkPolicy | hosts e TLS no painel |
 | config | ConfigMap (sem `kube-root-ca.crt`, `openshift-service-ca.crt`), Secret, ServiceAccount (sem o `default`, salvo com identidade de nuvem ou pull secret) | Secrets `helm.sh/release.v1` agrupados como estado do Helm |
 | storage | PVC, PV, StorageClass, VolumeSnapshot | kinds de escopo de cluster ganham setor próprio |
 | policy | HPA, PDB, ResourceQuota, LimitRange, Role, RoleBinding | PDB afeta drain e cutover |
@@ -181,6 +181,13 @@ Fang v2 sobre Cobra nos comandos; Bubble Tea v2, Bubbles v2, Lip Gloss v2 e Huh 
 | `kubestrata render [-c ctx] [--scale 5d\|10d\|30d\|log] [--axis created\|changed] [-o dir] [--open]` | site a partir do cache |
 | `kubestrata compare -c source -c target [--open]` | site lado a lado a partir do cache |
 | `kubestrata cache ls\|prune [--keep 5]` | manutenção dos snapshots |
+
+O estado da página fica no hash da URL (`#scale=log&axis=changed&color=manager&sel=<id>`), então
+uma visão pode virar favorito e ser conferida em modo headless. Uma Content-Security-Policy
+(`default-src 'none'`) mantém a página fora da rede. Depois do primeiro desenho a página grava
+`data-status`, `data-shown`, `data-draw-ms` e `data-total-ms` no `<body>` para checagem
+automatizada. Medido no Chrome headless num M4: 20 000 recursos desenham em cerca de 10–16 ms
+(primeiro desenho em cerca de 50 ms, arquivo de dados de 4,8 MB).
 
 Saída do site (padrão no diretório de cache do usuário): `index.html` (CSS e JS inline, sem CDN),
 `data/<cluster_id>.js` (`window.SNAP["<id>"] = {...}`; tag script, porque o Chrome bloqueia

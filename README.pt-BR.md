@@ -20,7 +20,7 @@ migração aparece como um anel no destino.
 kubestrata contexts                       # contextos do kubeconfig (disponível)
 kubestrata collect -c source -c target    # snapshot somente leitura no cache local (disponível)
 kubestrata cache ls                       # snapshots no cache (disponível)
-kubestrata render -c source --open        # visão radial de um cluster
+kubestrata render -c source --open        # visão radial, HTML offline (disponível)
 kubestrata compare -c source -c target    # visão lado a lado
 kubestrata                                # TUI interativa
 ```

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="kubestrata __VERSION__">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' file:; style-src 'unsafe-inline'; img-src data:">
+<title>kubestrata</title>
+<style>
+__CSS__
+</style>
+</head>
+<body data-status="loading">
+<header>
+  <h1>kubestrata</h1>
+  <div class="group" id="clusterGroup"><span class="lbl">cluster</span><select id="cluster"></select></div>
+  <div class="group" id="cats"></div>
+  <div class="group"><button id="system" class="chip" title="namespaces matching the system pattern">system</button></div>
+  <div class="group"><span class="lbl">scale</span><span id="scales"></span></div>
+  <div class="group"><span class="lbl">axis</span>
+    <button data-axis="created" title="metadata.creationTimestamp">created</button>
+    <button data-axis="changed" title="newest managedFields time, status ignored">changed</button></div>
+  <div class="group"><span class="lbl">color</span><select id="color">
+    <option value="cat">category</option><option value="manager">manager</option><option value="team">team</option></select></div>
+  <input type="search" id="q" placeholder="search name, image, label… ( / )">
+</header>
+<main id="main">
+  <div class="panes" id="panes"></div>
+  <aside id="panel"></aside>
+  <div id="legend"></div>
+  <div id="tip"></div>
+</main>
+<footer><span id="status"></span><span id="meta"></span></footer>
+<script>
+window.KUBESTRATA_VIEW = __CONFIG__;
+</script>
+__DATA_SCRIPTS__
+<script>
+__JS__
+</script>
+</body>
+</html>
