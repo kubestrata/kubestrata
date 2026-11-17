@@ -1,4 +1,4 @@
-.PHONY: build test vet fmt lint check tidy smoke
+.PHONY: build test vet fmt lint check tidy smoke lab-test
 
 BIN := bin/kubestrata
 
@@ -31,3 +31,8 @@ smoke: build
 	$(BIN) --version
 	$(BIN) contexts
 	$(BIN) contexts --format json
+
+# End-to-end against a running kuberito lab (https://github.com/leosavio/kuberito): collects both
+# clusters and compares with the lab's ground truth. Skips when no lab is up.
+lab-test:
+	go test -tags lab -count=1 -v ./test/e2e/
