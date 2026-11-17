@@ -295,3 +295,18 @@ func TestDetectDistro(t *testing.T) {
 		}
 	}
 }
+
+func TestCreatorSkipsSystemManagers(t *testing.T) {
+	ts := func(s string) *metav1.Time { t, _ := time.Parse(time.RFC3339, s); mt := metav1.NewTime(t); return &mt }
+	same := ts("2025-01-01T00:00:00Z")
+	mf := []metav1.ManagedFieldsEntry{
+		{Manager: "kube-controller-manager", Operation: "Update", Time: same},
+		{Manager: "kubectl-client-side-apply", Operation: "Update", Time: same},
+	}
+	if got := creatorManager(mf); got != "kubectl-client-side-apply" {
+		t.Fatalf("creator = %s", got)
+	}
+	if got := creatorManager(mf[:1]); got != "kube-controller-manager" {
+		t.Fatalf("only system manager: creator = %s", got)
+	}
+}

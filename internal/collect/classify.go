@@ -53,19 +53,33 @@ func mapManager(m string) string {
 	return MgrOther
 }
 
-// creatorManager is the manager of the oldest non-status entry: who created the object.
+// systemManagers write fields of objects they did not create (token controller, PV binder,
+// node lifecycle). They count as creator only when no other manager touched the object.
+var systemManagers = map[string]bool{
+	"kube-controller-manager": true, "kube-scheduler": true, "kubelet": true, "kube-apiserver": true,
+	"cloud-controller-manager": true,
+}
+
+// creatorManager is the manager of the oldest non-status entry: who created the object. Ties at
+// the same second go to a non-system manager.
 func creatorManager(mf []metav1.ManagedFieldsEntry) string {
-	var best string
-	var bestT time.Time
-	for _, e := range mf {
-		if e.Subresource != "" || e.Time == nil {
-			continue
+	pick := func(skipSystem bool) string {
+		var best string
+		var bestT time.Time
+		for _, e := range mf {
+			if e.Subresource != "" || e.Time == nil || (skipSystem && systemManagers[e.Manager]) {
+				continue
+			}
+			if best == "" || e.Time.Time.Before(bestT) {
+				best, bestT = e.Manager, e.Time.Time
+			}
 		}
-		if best == "" || e.Time.Time.Before(bestT) {
-			best, bestT = e.Manager, e.Time.Time
-		}
+		return best
 	}
-	return best
+	if m := pick(true); m != "" {
+		return m
+	}
+	return pick(false)
 }
 
 func managerNames(mf []metav1.ManagedFieldsEntry) []string {
