@@ -78,7 +78,7 @@ verdade-base do lab: 0 divergência, 0 vazamento.
 - [x] F1: `collect` (discovery, list paginado, projeção sanitizada, identidade do cluster) + cache com TTL
 - [x] F1: `render` (site radial, escalas 5d/10d/30d/log/custom, eixo criado/alterado, filtros, busca, painel, cor por categoria/manager/time)
 - [x] F1: `compare` (identidade, fingerprint, drift com fatos, tabela de cobertura, site lado a lado; e2e no lab)
-- [ ] CI: `.github/workflows/ci.yml` (lint + test -race) escrito; marcar depois da primeira execução verde no GitHub
+- [x] CI: `.github/workflows/ci.yml` (lint + test -race); primeira execução verde em 2026-11-18 (run 44340222456, `04f7c74`)
 - [ ] F1: TUI básica; teste de não vazamento sobre o site; golden de render
 - [ ] F2: parear tradução de kind (Route/Ingress → HTTPRoute) e PVs de nome gerado nas unidades de migração
 - [ ] v0.1.0: CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, release; depois tornar o repo público
