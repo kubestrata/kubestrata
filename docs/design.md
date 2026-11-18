@@ -149,21 +149,71 @@ Pods, ReplicaSets, ReplicationControllers and Jobs are folded into the nearest s
 
 ## Comparison
 
-Identity key: `group/kind/namespace/name`. States: only in source (pending), only in target (new),
-equal, drift. Drift uses a per-kind fingerprint of migration-relevant fields; a full-spec hash
-would flag defaulting differences between Kubernetes versions.
+`kubestrata compare -c <source> -c <target>` reads the newest cached snapshot of each context and
+never talks to a cluster. The comparison is computed in Go (`internal/compare`), so the CLI table,
+the JSON document and the page show the same numbers. The JSON keeps coverage with 4 decimals; the
+CLI (`math.Round`) and the page (`Math.round`) both round the percentage half up, so 0.125 shows
+as 13% in both.
 
-| Kind | Fingerprint |
+Identity key: the resource id `group/Kind/namespace/name`. States:
+
+| State | Meaning | Color |
+|---|---|---|
+| equal | in both, same fingerprint (`fp`) | `#66bb6a` |
+| drift | in both, different fingerprint; the detail lists the facts that differ | `#ffb300` |
+| pending | only in the source: not migrated yet | `#ef5350` |
+| new | only in the target | `#42a5f5` |
+
+The fingerprint is a hash of the kind and its projected facts **minus a volatile set** (pod
+counts, readiness, restarts, pod and rollout times, Job runs, architectures, field managers,
+missing refs, Helm revision and status, orphan flags). A full-spec hash would flag defaulting
+differences between Kubernetes versions; the projection per kind decides what counts:
+
+| Kind | Facts in the fingerprint (main ones) |
 |---|---|
-| Deployment, StatefulSet, DaemonSet, DeploymentConfig | images (repo:tag@digest), replicas, requests/limits, volume and envFrom names |
+| Deployment, StatefulSet, DaemonSet, DeploymentConfig | images, replicas, CPU and memory requests/limits, service account, PVC names, node selector (DeploymentConfig also strategy and triggers) |
 | Service | type, ports |
 | Ingress, Route, HTTPRoute | hosts, paths, TLS secret names, class |
 | PVC | storageClass, size, accessModes |
 | ConfigMap | key names + content hash |
 | Secret | type + key count |
+| ServiceAccount | cloud identity type (`aws-irsa`, ...), image pull secret count |
 
-Synchronized zoom and pan; hovering a node highlights its pair. A per-namespace table shows
-source total, target total, pending, drift, only-in-target and coverage.
+Volume, envFrom and Secret/ConfigMap references are edges, not facts: they do not enter the
+fingerprint.
+
+Drift detail = every fact outside the volatile set whose value differs, with both values (a side
+without the fact has none). Because the key holds group/Kind, a **kind translation** shows as a
+pair: an OpenShift Route or an Ingress replaced by a Gateway API HTTPRoute is pending in the source
+and new in the target. Pairing across kinds belongs to the migration units of F2. Objects with
+generated names (PersistentVolumes `pvc-<uid>`) never pair either.
+
+Per-namespace summary (`_` = cluster-scoped): source total, target total, equal, drift, pending,
+new and coverage = (equal + drift) / source total, `null` when the source has nothing there.
+Totals and the default table leave system namespaces out, like the default view.
+
+`--format json` prints one document (`schema_version` 1) with `source`, `target`, `totals`,
+`namespaces`, `items` (`id`, `ns`, `kind`, `state`, `diff[]`) plus `index` and `url` of the site:
+
+```json
+{"schema_version": 1,
+ "source": {"cluster_id": "d1f6c4078d11", "context": "source", "distro": "openshift", "resources": 406},
+ "totals": {"ns": "total", "source": 320, "target": 147, "equal": 90, "drift": 44, "pending": 186, "new": 13, "coverage": 0.4188},
+ "items": [{"id": "apps/Deployment/payments/api", "ns": "payments", "kind": "Deployment", "state": "drift",
+            "diff": [{"fact": "images", "source": ["registry/api:2.56"], "target": ["registry/api:2.57"]}]}]}
+```
+
+The page puts the two clusters side by side with sectors computed over both (same namespace, same
+angle), synchronized zoom and pan, and the color mode `state` by default (category, manager and
+team stay available). Hovering or selecting a resource highlights the same id in both panes; the
+side panel shows both sides and the differing facts. A coverage table under the panes has one row
+per namespace. Clicking a row sets the namespace filter (`ns=<namespace>` in the URL hash, `_` for
+cluster-scoped): both panes and the sectors keep only the resources whose namespace is exactly
+that one, the row stays highlighted and a chip in the header names the filter. Clicking the same
+row again, or the chip, clears it. The filter is independent of the search (`q`), which still dims
+what does not match. The footer counts each identity once over both panes; its state counts
+follow the active filters (categories, system, namespace), and its coverage is the total over all
+non-system namespaces, the same as the CLI total.
 
 ## CLI and TUI
 
@@ -176,18 +226,23 @@ Fang v2 over Cobra for commands; Bubble Tea v2, Bubbles v2, Lip Gloss v2 and Huh
 | `kubestrata contexts` | kubeconfig contexts (no cluster access) |
 | `kubestrata collect [-c ctx]... [--all] [--kinds ...] [--max-age 6h] [--force]` | writes the cache; reuses a snapshot newer than `--max-age` |
 | `kubestrata render [-c ctx] [--scale 5d\|10d\|30d\|log] [--axis created\|changed] [-o dir] [--open]` | site from the cache |
-| `kubestrata compare -c source -c target [--open]` | side-by-side site from the cache |
+| `kubestrata compare -c source -c target [--scale ...] [--axis ...] [-o dir] [--open]` | coverage table on stdout and side-by-side site from the cache |
 | `kubestrata cache ls\|prune [--keep 5]` | snapshot housekeeping |
 
-The page state lives in the URL hash (`#scale=log&axis=changed&color=manager&sel=<id>`), so a view
-can be bookmarked and checked headless. A Content-Security-Policy (`default-src 'none'`) keeps the
-page off the network. After the first draw the page writes `data-status`, `data-shown`,
-`data-draw-ms` and `data-total-ms` on `<body>` for automated checks. Measured in headless Chrome on
-an M4: 20 000 resources draw in about 10–16 ms (first paint about 50 ms, 4.8 MB data file).
+The page state lives in the URL hash (`#scale=log&axis=changed&color=manager&ns=<namespace>&sel=<id>`),
+so a view can be bookmarked and checked headless; `ns=` works in the single-cluster view too. A
+Content-Security-Policy (`default-src 'none'`) keeps the page off the network. After the first draw
+the page writes `data-status`, `data-shown` (resources drawn, summed over the panes),
+`data-draw-ms` and `data-total-ms` on `<body>` for automated checks. `make page-check` writes both
+sites from the cache, loads them in headless Chrome for several hash states and fails unless every
+page reports `data-status="ok"`. Measured in headless Chrome on an M4: 20 000 resources draw in
+about 10–16 ms (first paint about 50 ms, 4.8 MB data file).
 
-Site output (default under the user cache dir): `index.html` (inline CSS and JS, no CDN),
-`data/<cluster_id>.js` (`window.SNAP["<id>"] = {...}`; a script tag, because Chrome blocks
-`fetch()` of local JSON on `file://`), `json/<cluster_id>.json` for machines.
+Site output (default `<cache dir>/site` for `render`, `<cache dir>/compare` for `compare`):
+`index.html` (inline CSS and JS, no CDN), `data/<cluster_id>.js` (`window.KUBESTRATA["<id>"] = {...}`;
+a script tag, because Chrome blocks `fetch()` of local JSON on `file://`), `json/<cluster_id>.json`
+for machines; `compare` adds `data/compare.js` (`window.KUBESTRATA_COMPARE = {...}`) and
+`json/compare.json`.
 
 ## Phases
 

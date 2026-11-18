@@ -524,6 +524,10 @@ var volatile = map[string]bool{
 	"helm_revision": true, "helm_status": true, "orphan": true, "owner_missing": true,
 }
 
+// Volatile reports whether a fact stays out of the fingerprint. compare uses it to name the
+// facts behind a drift.
+func Volatile(fact string) bool { return volatile[fact] }
+
 func fingerprint(kind string, facts map[string]any) string {
 	keep := map[string]any{"kind": kind}
 	for k, v := range facts {

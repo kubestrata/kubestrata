@@ -1,5 +1,7 @@
 // kubestrata view: deterministic polar layout of a cluster snapshot. Angle = namespace sector
 // (grouped by team), sub-sector by category; radius = age on the selected ring scale.
+// Compare mode puts the source and the target side by side, with sectors computed over both and
+// each resource colored by its state (equal, drift, pending, new).
 // Data is untrusted: every string reaches the page through textContent, never innerHTML.
 (function () {
   "use strict";
@@ -11,6 +13,15 @@
   var CFG = window.KUBESTRATA_VIEW || {};
   var DATA = window.KUBESTRATA || {};
   if (CFG.schema_version !== 1) throw new Error("view schema_version " + CFG.schema_version + " not supported");
+  var COMPARE = CFG.mode === "compare";
+  var CMP = COMPARE ? window.KUBESTRATA_COMPARE : null;
+  if (COMPARE) {
+    if (!CMP) throw new Error("comparison data not loaded");
+    if (CMP.schema_version !== 1) throw new Error("comparison schema_version " + CMP.schema_version + " not supported");
+    if ((CFG.clusters || []).length !== 2 || CMP.source.cluster_id !== CFG.clusters[0] || CMP.target.cluster_id !== CFG.clusters[1]) {
+      throw new Error("comparison does not match the clusters of this view");
+    }
+  }
 
   var CATS = ["workload", "network", "config", "storage", "policy", "crd"];
   var CAT_COLOR = { workload: "#4fc3f7", network: "#ba68c8", config: "#ffd54f", storage: "#81c784",
@@ -22,13 +33,20 @@
     helm: "reinstall the release in the target", operator: "migrate the custom resource, not its children",
     kubectl: "applied by hand: export, clean, move to Git", other: "unknown tool: check managedFields",
     unknown: "no manager data" };
+  var STATES = ["equal", "drift", "pending", "new"];
+  var STATE_COLOR = { equal: "#66bb6a", drift: "#ffb300", pending: "#ef5350", "new": "#42a5f5" };
+  var STATE_HINT = { equal: "in both, same fingerprint", drift: "in both, the fingerprint differs",
+    pending: "only in the source: not migrated yet", "new": "only in the target" };
   var PALETTE = ["#4fc3f7", "#ffb74d", "#aed581", "#f06292", "#9575cd", "#4db6ac", "#e57373", "#fff176",
     "#7986cb", "#a1887f", "#90a4ae", "#dce775"];
   var DAY = 86400000, CAP = 1095, RR_MIN = 0.05;
+  var ITEM = {};
+  if (CMP) CMP.items.forEach(function (it) { ITEM[it.id] = it; });
 
   // ---- state (initial values from the config, then from the URL hash)
-  var st = { scale: CFG.scale || "30d", axis: CFG.axis || "created", color: "cat", system: false,
-    q: "", sel: null, cats: {}, cluster: (CFG.clusters || [])[0] };
+  // ns: namespace filter ("_" = cluster-scoped), exact match on the resource namespace; q: free-text search
+  var st = { scale: CFG.scale || "30d", axis: CFG.axis || "created", color: COMPARE ? "state" : "cat", system: false,
+    ns: "", q: "", sel: null, cats: {}, cluster: (CFG.clusters || [])[0] };
   CATS.forEach(function (c) { st.cats[c] = true; });
   (function () {
     var h = location.hash.replace(/^#/, "").split("&");
@@ -36,15 +54,18 @@
       var p = kv.split("="), k = p[0], v = decodeURIComponent(p[1] || "");
       if (k === "scale" || k === "axis" || k === "color" || k === "cluster") st[k] = v;
       if (k === "system") st.system = v === "1";
+      if (k === "ns") st.ns = v;
       if (k === "sel") st.sel = v;
       if (k === "q") st.q = v;
       if (k === "hide") v.split(",").forEach(function (c) { if (c) st.cats[c] = false; });
     });
+    if (st.color === "state" && !COMPARE) st.color = "cat";
   })();
   function saveHash() {
     var parts = ["scale=" + st.scale, "axis=" + st.axis, "color=" + st.color];
-    if ((CFG.clusters || []).length > 1) parts.push("cluster=" + encodeURIComponent(st.cluster));
+    if (!COMPARE && (CFG.clusters || []).length > 1) parts.push("cluster=" + encodeURIComponent(st.cluster));
     if (st.system) parts.push("system=1");
+    if (st.ns) parts.push("ns=" + encodeURIComponent(st.ns));
     var hide = CATS.filter(function (c) { return !st.cats[c]; });
     if (hide.length) parts.push("hide=" + hide.join(","));
     if (st.q) parts.push("q=" + encodeURIComponent(st.q));
@@ -75,6 +96,7 @@
     return (d / 365).toFixed(1) + " years";
   }
   function dayLabel(d) { return d >= 365 && d % 365 === 0 ? (d / 365) + "y" : d + "d"; }
+  function pct(c) { return c === null || c === undefined ? "—" : Math.round(c * 100) + "%"; }
 
   // ---- ring scales: rr(age) in [RR_MIN, 1]; the band past the last ring is compressed (log)
   function scaleOf(name) {
@@ -117,6 +139,20 @@
 
   // ---- model of one snapshot
   var models = {};
+  // teams of every snapshot in the view: in compare mode a team keeps its color on both sides
+  function teamsOf(ids) {
+    var teams = {};
+    ids.forEach(function (id) {
+      var snap = DATA[id], ns = {};
+      if (!snap) return;
+      (snap.namespaces || []).forEach(function (n) { ns[n.name] = n; });
+      (snap.resources || []).forEach(function (r) {
+        var t = r.team || (ns[r.ns || "_"] && ns[r.ns || "_"].team) || "";
+        if (t) teams[t] = true;
+      });
+    });
+    return Object.keys(teams).sort();
+  }
   function model(id) {
     if (models[id]) return models[id];
     var snap = DATA[id];
@@ -142,9 +178,13 @@
     (snap.edges || []).forEach(function (e) {
       if (byId[e.from] && byId[e.to]) { out[e.from].push(e); inn[e.to].push(e); }
     });
-    var teams = {};
-    nodes.forEach(function (n) { if (n.team) teams[n.team] = true; });
-    var teamList = Object.keys(teams).sort();
+    var teamList;
+    if (COMPARE) teamList = teamsOf(CFG.clusters);
+    else {
+      var teams = {};
+      nodes.forEach(function (n) { if (n.team) teams[n.team] = true; });
+      teamList = Object.keys(teams).sort();
+    }
     var teamColor = {};
     teamList.forEach(function (t, i) { teamColor[t] = PALETTE[i % PALETTE.length]; });
     models[id] = { id: id, snap: snap, ref: ref, ns: ns, nodes: nodes, byId: byId, out: out, inn: inn,
@@ -155,6 +195,7 @@
   function visible(n) {
     if (!st.cats[n.cat]) return false;
     if (n.system && !st.system) return false;
+    if (st.ns && n.ns !== st.ns) return false;
     return true;
   }
   function ageOf(m, n) {
@@ -162,13 +203,28 @@
     return Math.max(0, (m.ref - t) / DAY);
   }
   function matches(n) { return !st.q || n.text.indexOf(st.q.toLowerCase()) >= 0; }
+  function stateOf(id) { return ITEM[id] ? ITEM[id].state : ""; }
   function colorOf(m, n) {
+    if (st.color === "state") return STATE_COLOR[stateOf(n.id)] || "#616161";
     if (st.color === "manager") return MGR_COLOR[n.r.manager] || MGR_COLOR.other;
     if (st.color === "team") return n.team ? m.teamColor[n.team] : "#616161";
     return CAT_COLOR[n.cat];
   }
+  // states of the visible resources, each identity counted once
+  function stateCounts() {
+    var seen = {}, c = { equal: 0, drift: 0, pending: 0, "new": 0 };
+    panes.forEach(function (p) {
+      model(p.cluster).nodes.forEach(function (n) {
+        if (!visible(n) || seen[n.id]) return;
+        seen[n.id] = true;
+        var s = stateOf(n.id);
+        if (s) c[s]++;
+      });
+    });
+    return c;
+  }
 
-  // ---- sectors over the namespaces of every shown model (one today, two in compare)
+  // ---- sectors over the namespaces of every shown model (one, or two in compare)
   function sectors(ms) {
     var groups = {};
     // weight of a namespace (and of each category in it) = the largest count among the models
@@ -212,6 +268,7 @@
 
   // ---- panes
   var panes = [];
+  var hov = null; // id under the pointer, highlighted in every pane
   function makePane(clusterId) {
     var root = el("div", { class: "pane" });
     var cv = el("canvas");
@@ -219,7 +276,7 @@
     root.appendChild(cv); root.appendChild(title);
     $("panes").appendChild(root);
     var p = { root: root, cv: cv, ctx: cv.getContext("2d"), title: title, cluster: clusterId,
-      view: { k: 1, x: 0, y: 0 }, pos: [], hov: null };
+      view: { k: 1, x: 0, y: 0 }, pos: [] };
     bindPane(p);
     return p;
   }
@@ -261,7 +318,8 @@
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, p.cv.width, p.cv.height);
     ctx.setTransform(dpr * k, 0, 0, dpr * k, dpr * (w / 2 + p.view.x), dpr * (h / 2 + p.view.y + 14));
-    var R = p.R = Math.max(60, Math.min(w, h - 40) * 0.40);
+    // narrow panes (compare) keep room for the namespace labels outside the circle
+    var R = p.R = Math.max(60, Math.min(w * 0.36, (h - 40) * 0.40));
     var m = model(p.cluster);
     // rings
     ctx.font = (11 / k) + "px -apple-system, Helvetica, Arial, sans-serif";
@@ -303,7 +361,8 @@
       }
     });
     // edges of the focused node
-    var focus = p.hov || (st.sel && m.byId[st.sel]) || null;
+    var fid = hov || st.sel;
+    var focus = (fid && m.byId[fid]) || null;
     var at = {};
     p.pos.forEach(function (q) { q.x = q.rr * R * Math.cos(q.a); q.y = q.rr * R * Math.sin(q.a); at[q.n.id] = q; });
     if (focus && at[focus.id]) {
@@ -371,10 +430,10 @@
         panes.forEach(function (o) { o.view.x = drag.vx + dx; o.view.y = drag.vy + dy; });
         redraw(); return;
       }
-      var n = pick(p, ev);
-      if (n !== p.hov) { p.hov = n; tip(p, n, ev); redraw(); } else if (n) tip(p, n, ev);
+      var n = pick(p, ev), id = n ? n.id : null;
+      if (id !== hov) { hov = id; tip(p, n, ev); redraw(); } else if (n) tip(p, n, ev);
     });
-    p.cv.addEventListener("mouseleave", function () { p.hov = null; tip(p, null); redraw(); });
+    p.cv.addEventListener("mouseleave", function () { hov = null; tip(p, null); redraw(); });
     p.cv.addEventListener("wheel", function (ev) {
       ev.preventDefault();
       var b = p.cv.getBoundingClientRect();
@@ -397,7 +456,21 @@
     var m = model(p.cluster);
     t.textContent = "";
     t.appendChild(el("b", null, n.r.kind + " " + (n.r.ns ? n.r.ns + "/" : "") + n.r.name));
-    t.appendChild(el("span", null, ageText(ageOf(m, n)) + " · " + n.r.manager + (n.team ? " · " + n.team : "")));
+    if (COMPARE) {
+      ["source", "target"].forEach(function (label, i) {
+        var mi = model(panes[i].cluster), x = mi.byId[n.id];
+        if (x) t.appendChild(el("span", { class: "ln" }, label + ": " + ageText(ageOf(mi, x)) + " · " + x.r.manager));
+      });
+      var it = ITEM[n.id];
+      if (it) {
+        var s = el("span", { class: "ln" }, it.state + (it.diff && it.diff.length ? ": " +
+          it.diff.map(function (d) { return d.fact; }).join(", ") : ""));
+        s.style.color = STATE_COLOR[it.state];
+        t.appendChild(s);
+      }
+    } else {
+      t.appendChild(el("span", null, ageText(ageOf(m, n)) + " · " + n.r.manager + (n.team ? " · " + n.team : "")));
+    }
     var mb = $("main").getBoundingClientRect();
     t.style.left = Math.min(ev.clientX - mb.left + 14, mb.width - 340) + "px";
     t.style.top = (ev.clientY - mb.top + 14) + "px";
@@ -419,7 +492,23 @@
     tr.appendChild(td); tbl.appendChild(tr);
     return td;
   }
+  // three columns: label, source value, target value ("—" where a side has nothing)
+  function dash(v) { var s = fmt(v); return s === "" ? "—" : s; }
+  function row3(tbl, k, a, b, cls) {
+    var tr = el("tr");
+    tr.appendChild(el("td", null, k));
+    var ta = el("td", cls ? { class: cls } : null, dash(a)), tb = el("td", cls ? { class: cls } : null, dash(b));
+    tr.appendChild(ta); tr.appendChild(tb); tbl.appendChild(tr);
+    return [ta, tb];
+  }
+  function table3() {
+    var t = el("table", { class: "two" }), tr = el("tr", { class: "hd" });
+    tr.appendChild(el("td")); tr.appendChild(el("td", null, "source")); tr.appendChild(el("td", null, "target"));
+    t.appendChild(tr);
+    return t;
+  }
   function renderPanel() {
+    if (COMPARE) { renderComparePanel(); return; }
     var box = $("panel");
     box.textContent = "";
     var m = model(panes[0].cluster), n = st.sel && m.byId[st.sel];
@@ -442,12 +531,7 @@
       m.nodes.forEach(function (x) { if (visible(x)) mc[x.r.manager] = (mc[x.r.manager] || 0) + 1; });
       MGR.forEach(function (k) { if (mc[k]) row(mt, k + " (" + mc[k] + ")", MGR_HINT[k]); });
       box.appendChild(mt);
-      if ((s.errors || []).length) {
-        box.appendChild(el("h3", null, "collection errors"));
-        var ul = el("ul");
-        s.errors.forEach(function (e) { ul.appendChild(el("li", { class: "warn" }, e.kind + (e.ns ? " " + e.ns : "") + ": " + e.reason)); });
-        box.appendChild(ul);
-      }
+      errors(box, s, "collection errors");
       box.appendChild(el("p", { class: "empty" }, "Click a resource for details. Drag to pan, scroll to zoom, double-click to reset."));
       return;
     }
@@ -463,7 +547,7 @@
     if (n.changed) row(t2, "changed", fmt(r.changed) + " (" + ageText((m.ref - n.changed) / DAY) + ")");
     if (r.owner) {
       var td = row(t2, "owner", "");
-      link(td, r.owner, m);
+      link(td, r.owner);
     }
     box.appendChild(t2);
     var facts = r.facts || {};
@@ -474,15 +558,7 @@
       keys.forEach(function (k) { row(ft, k, facts[k], k === "end_of_life" ? "eol" : null); });
       box.appendChild(ft);
     }
-    var rel = m.out[n.id].map(function (e) { return ["→ " + e.rel, e.to]; })
-      .concat(m.inn[n.id].map(function (e) { return ["← " + e.rel, e.from]; }));
-    box.appendChild(el("h3", null, "related (" + rel.length + ")"));
-    if (!rel.length) box.appendChild(el("div", { class: "empty" }, "none"));
-    else {
-      var rt = el("table");
-      rel.forEach(function (x) { link(row(rt, x[0], ""), x[1], m); });
-      box.appendChild(rt);
-    }
+    related(box, m, n, "related");
     var labels = r.labels || {}, lk = Object.keys(labels).sort();
     if (lk.length) {
       box.appendChild(el("h3", null, "labels"));
@@ -491,11 +567,141 @@
       box.appendChild(lt);
     }
   }
-  function link(td, id, m) {
+  function errors(box, s, title) {
+    if (!(s.errors || []).length) return;
+    box.appendChild(el("h3", null, title));
+    var ul = el("ul");
+    s.errors.forEach(function (e) { ul.appendChild(el("li", { class: "warn" }, e.kind + (e.ns ? " " + e.ns : "") + ": " + e.reason)); });
+    box.appendChild(ul);
+  }
+  function related(box, m, n, title) {
+    var rel = m.out[n.id].map(function (e) { return ["→ " + e.rel, e.to]; })
+      .concat(m.inn[n.id].map(function (e) { return ["← " + e.rel, e.from]; }));
+    box.appendChild(el("h3", null, title + " (" + rel.length + ")"));
+    if (!rel.length) box.appendChild(el("div", { class: "empty" }, "none"));
+    else {
+      var rt = el("table");
+      rel.forEach(function (x) { link(row(rt, x[0], ""), x[1]); });
+      box.appendChild(rt);
+    }
+  }
+  function stateLine(state, text) {
+    var d = el("div", { class: "state" }), i = el("i");
+    i.style.background = STATE_COLOR[state] || "#616161";
+    d.appendChild(i); d.appendChild(document.createTextNode(text));
+    return d;
+  }
+  function renderComparePanel() {
+    var box = $("panel");
+    box.textContent = "";
+    var ms = panes.map(function (p) { return model(p.cluster); });
+    var a = st.sel && ms[0].byId[st.sel], b = st.sel && ms[1].byId[st.sel];
+    if (!a && !b) {
+      var sa = ms[0].snap, sb = ms[1].snap, ca = sa.cluster, cb = sb.cluster;
+      box.appendChild(el("h2", null, ca.context + " → " + cb.context));
+      box.appendChild(el("div", { class: "sub" }, "resources paired by group/Kind/namespace/name"));
+      var t = table3();
+      row3(t, "cluster id", ca.id, cb.id);
+      row3(t, "distro", ca.distro + " " + ca.version, cb.distro + " " + cb.version);
+      row3(t, "collected", sa.collected_at, sb.collected_at);
+      row3(t, "nodes", ca.nodes && ca.nodes.count || 0, cb.nodes && cb.nodes.count || 0);
+      row3(t, "resources", sa.resources.length, sb.resources.length);
+      box.appendChild(t);
+      box.appendChild(el("h3", null, "states (shown resources)"));
+      var c = stateCounts();
+      STATES.forEach(function (s) { box.appendChild(stateLine(s, s + " " + c[s] + " — " + STATE_HINT[s])); });
+      box.appendChild(el("h3", null, "coverage"));
+      var ct = el("table");
+      row(ct, "total", pct(CMP.totals.coverage) + " of the source is in the target (equal + drift), system namespaces excluded");
+      box.appendChild(ct);
+      errors(box, sa, "collection errors (source)");
+      errors(box, sb, "collection errors (target)");
+      box.appendChild(el("p", { class: "empty" }, "Hover a resource to find its pair, click for details. Click a row of the table below to show only its namespace, again to clear. Drag to pan, scroll to zoom, double-click to reset."));
+      return;
+    }
+    var n = a || b, r = n.r, it = ITEM[st.sel] || { state: a && b ? "equal" : a ? "pending" : "new" };
+    box.appendChild(el("h2", null, r.kind + " " + r.name));
+    box.appendChild(el("div", { class: "sub" }, r.id));
+    box.appendChild(stateLine(it.state, it.state + " — " + STATE_HINT[it.state]));
+    var ra = a ? a.r : {}, rb = b ? b.r : {};
+    var t2 = table3();
+    row3(t2, "namespace", a && (ra.ns || "(cluster-scoped)"), b && (rb.ns || "(cluster-scoped)"));
+    row3(t2, "team", a && a.team, b && b.team);
+    row3(t2, "manager", ra.manager, rb.manager);
+    if (ra.app || rb.app) row3(t2, "app", ra.app, rb.app);
+    row3(t2, "created", a && fmt(ra.created) + " (" + ageText((ms[0].ref - a.created) / DAY) + ")",
+      b && fmt(rb.created) + " (" + ageText((ms[1].ref - b.created) / DAY) + ")");
+    if ((a && a.changed) || (b && b.changed)) {
+      row3(t2, "changed", a && a.changed && fmt(ra.changed) + " (" + ageText((ms[0].ref - a.changed) / DAY) + ")",
+        b && b.changed && fmt(rb.changed) + " (" + ageText((ms[1].ref - b.changed) / DAY) + ")");
+    }
+    if (ra.owner || rb.owner) {
+      var cells = row3(t2, "owner", "", "");
+      [ra.owner, rb.owner].forEach(function (o, i) { if (o) { cells[i].textContent = ""; link(cells[i], o); } });
+    }
+    box.appendChild(t2);
+    var diff = it.diff || [], differs = {};
+    if (it.state === "drift") {
+      box.appendChild(el("h3", null, "differences (" + diff.length + ")"));
+      if (!diff.length) box.appendChild(el("div", { class: "empty" }, "the fingerprint differs; no fact detail"));
+      else {
+        var dt = table3();
+        diff.forEach(function (d) { differs[d.fact] = true; row3(dt, d.fact, d.source, d.target, "diff"); });
+        box.appendChild(dt);
+      }
+    }
+    var fa = ra.facts || {}, fb = rb.facts || {}, keys = {};
+    Object.keys(fa).concat(Object.keys(fb)).forEach(function (k) { keys[k] = true; });
+    var kl = Object.keys(keys).sort();
+    if (kl.length) {
+      box.appendChild(el("h3", null, "facts"));
+      var ft = table3();
+      kl.forEach(function (k) { row3(ft, k, a ? fa[k] : undefined, b ? fb[k] : undefined, differs[k] ? "diff" : null); });
+      box.appendChild(ft);
+    }
+    if (a) related(box, ms[0], a, "related in the source");
+    if (b) related(box, ms[1], b, "related in the target");
+  }
+  function link(td, id) {
     var a = el("a", null, id.split("/").slice(1).join("/"));
     a.title = id;
-    a.addEventListener("click", function () { st.sel = m.byId[id] ? id : null; saveHash(); renderPanel(); redraw(); });
+    a.addEventListener("click", function () {
+      st.sel = panes.some(function (p) { return model(p.cluster).byId[id]; }) ? id : null;
+      saveHash(); renderPanel(); redraw();
+    });
     td.appendChild(a);
+  }
+
+  // ---- coverage table (compare mode), under the panes
+  function coverage() {
+    var box = $("coverage");
+    box.textContent = "";
+    var t = el("table"), hd = el("tr", { class: "hd" });
+    ["namespace", "team", "source", "target", "equal", "drift", "pending", "new", "coverage"].forEach(function (h) {
+      hd.appendChild(el("td", null, h));
+    });
+    t.appendChild(hd);
+    var rows = CMP.namespaces.filter(function (s) { return st.system || !s.system; });
+    rows.concat([CMP.totals]).forEach(function (s) {
+      var total = s === CMP.totals;
+      var tr = el("tr", { class: total ? "total" : (st.ns === s.ns ? "on" : "") });
+      tr.appendChild(el("td", null, total ? "total" + (st.system ? " (system namespaces excluded)" : "") : s.ns === "_" ? "cluster-scoped" : s.ns));
+      tr.appendChild(el("td", null, s.team || ""));
+      [s.source, s.target, s.equal, s.drift, s.pending, s["new"]].forEach(function (v) { tr.appendChild(el("td", { class: "n" }, String(v))); });
+      var td = el("td", { class: "cov" }), bar = el("span", { class: "bar" }), fill = el("i");
+      var c = s.coverage;
+      fill.style.width = (c === null || c === undefined ? 0 : Math.round(c * 100)) + "%";
+      fill.style.background = c >= 0.75 ? STATE_COLOR.equal : c >= 0.25 ? STATE_COLOR.drift : STATE_COLOR.pending;
+      bar.appendChild(fill); td.appendChild(bar); td.appendChild(el("span", null, pct(c)));
+      tr.appendChild(td);
+      if (!total) {
+        tr.title = st.ns === s.ns ? "clear the namespace filter" :
+          "show only " + (s.ns === "_" ? "cluster-scoped resources" : "namespace " + s.ns);
+        tr.addEventListener("click", function () { st.ns = st.ns === s.ns ? "" : s.ns; refresh(); });
+      }
+      t.appendChild(tr);
+    });
+    box.appendChild(t);
   }
 
   // ---- header controls, legend, footer
@@ -505,11 +711,17 @@
       var s = DATA[id];
       sel.appendChild(el("option", { value: id }, s ? s.cluster.context : id));
     });
-    if ((CFG.clusters || []).length < 2) $("clusterGroup").style.display = "none";
+    if (COMPARE || (CFG.clusters || []).length < 2) $("clusterGroup").style.display = "none";
     sel.value = st.cluster;
     sel.addEventListener("change", function () {
       st.cluster = sel.value; st.sel = null; panes[0].cluster = st.cluster; refresh();
     });
+    if (COMPARE) {
+      $("color").insertBefore(el("option", { value: "state" }, "state"), $("color").firstChild);
+      $("main").classList.add("compare");
+      document.querySelector("header h1").textContent = "kubestrata · compare";
+      document.title = "kubestrata · " + CMP.source.context + " → " + CMP.target.context;
+    }
     var scales = $("scales"), names = ["5d", "10d", "30d", "log"];
     if (CFG.rings && CFG.rings.length) names.push("custom");
     names.forEach(function (s) {
@@ -524,7 +736,7 @@
     $("system").addEventListener("click", function () { st.system = !st.system; refresh(); });
     var q = $("q");
     q.value = st.q;
-    q.addEventListener("input", function () { st.q = q.value.trim(); saveHash(); redraw(); footer(); });
+    q.addEventListener("input", function () { st.q = q.value.trim(); saveHash(); redraw(); footer(); if (COMPARE) coverage(); });
     document.addEventListener("keydown", function (ev) {
       if (ev.key === "/" && document.activeElement !== q) { ev.preventDefault(); q.focus(); }
       if (ev.key === "Escape") { st.sel = null; saveHash(); renderPanel(); redraw(); }
@@ -535,10 +747,25 @@
     document.querySelectorAll("[data-axis]").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-axis") === st.axis); });
     $("color").value = st.color;
     $("system").classList.toggle("on", st.system);
-    var box = $("cats"), m = model(panes[0].cluster);
+    var ng = $("nsGroup");
+    ng.textContent = "";
+    ng.style.display = st.ns ? "" : "none";
+    if (st.ns) {
+      var nb = el("button", { class: "chip on", id: "nsClear", title: "clear the namespace filter" },
+        "namespace " + (st.ns === "_" ? "cluster-scoped" : st.ns) + " ×");
+      nb.addEventListener("click", function () { st.ns = ""; refresh(); });
+      ng.appendChild(nb);
+    }
+    var box = $("cats"), cat = {};
+    // each identity counted once over the panes
+    panes.forEach(function (p) {
+      model(p.cluster).nodes.forEach(function (x) {
+        if ((st.system || !x.system) && (!st.ns || x.ns === st.ns) && !cat[x.id]) cat[x.id] = x.cat;
+      });
+    });
     box.textContent = "";
     CATS.forEach(function (c) {
-      var n = m.nodes.filter(function (x) { return x.cat === c && (st.system || !x.system); }).length;
+      var n = Object.keys(cat).filter(function (id) { return cat[id] === c; }).length;
       if (!n) return;
       var b = el("button", { class: "chip" + (st.cats[c] ? " on" : " off") });
       var dot = el("i"); dot.style.background = CAT_COLOR[c];
@@ -550,11 +777,17 @@
   function legend() {
     var box = $("legend"), m = model(panes[0].cluster);
     box.textContent = "";
-    var entries;
-    if (st.color === "manager") entries = MGR.map(function (k) { return [k, MGR_COLOR[k]]; });
+    var entries, head = "color: " + st.color;
+    if (st.color === "state") {
+      var c = stateCounts();
+      head = "state";
+      entries = STATES.map(function (s) {
+        return [s + " " + c[s] + { equal: "", drift: "", pending: " (source only)", "new": " (target only)" }[s], STATE_COLOR[s]];
+      });
+    } else if (st.color === "manager") entries = MGR.map(function (k) { return [k, MGR_COLOR[k]]; });
     else if (st.color === "team") entries = m.teams.map(function (t) { return [t, m.teamColor[t]]; }).concat([["no team", "#616161"]]);
     else entries = CATS.map(function (c) { return [c, CAT_COLOR[c]]; });
-    box.appendChild(el("div", { class: "h" }, "color: " + st.color));
+    box.appendChild(el("div", { class: "h" }, head));
     var MAX = 10;
     entries.slice(0, MAX).forEach(function (e) {
       var d = el("div"), i = el("i"); i.style.background = e[1];
@@ -565,20 +798,39 @@
     box.appendChild(el("div", { class: "h" }, "center = newest · edge = oldest (" + st.axis + ")"));
   }
   function footer() {
-    var p = panes[0], m = model(p.cluster), c = m.snap.cluster, hits = 0;
-    if (st.q) p.pos.forEach(function (o) { if (matches(o.n)) hits++; });
-    $("status").textContent = m.snap.resources.length + " resources · " + p.shown + " shown" +
-      (st.q ? " · " + hits + " match" : "") + ((m.snap.errors || []).length ? " · " + m.snap.errors.length + " collection errors" : "");
-    $("meta").textContent = c.context + " · " + c.distro + " " + c.version + " · collected " + fmt(m.snap.collected_at) +
+    // shown and match count each identity once over the panes (data-shown keeps the sum of the panes)
+    var seen = {}, hit = {}, hits = 0, shown = 0;
+    panes.forEach(function (p) {
+      p.pos.forEach(function (o) {
+        var id = o.n.id;
+        if (!seen[id]) { seen[id] = true; shown++; }
+        if (st.q && !hit[id] && matches(o.n)) { hit[id] = true; hits++; }
+      });
+    });
+    var match = st.q ? " · " + hits + " match" : "";
+    if (COMPARE) {
+      var sa = model(panes[0].cluster).snap, sb = model(panes[1].cluster).snap, c = stateCounts();
+      var errs = (sa.errors || []).length + (sb.errors || []).length;
+      $("status").textContent = "collected: source " + sa.resources.length + " · target " + sb.resources.length +
+        " · " + shown + " shown (identities counted once)" + match + " · states (active filters): equal " + c.equal +
+        " · drift " + c.drift + " · pending " + c.pending + " · new " + c["new"] + " · coverage " +
+        pct(CMP.totals.coverage) + " (all non-system namespaces)" + (errs ? " · " + errs + " collection errors" : "");
+      $("meta").textContent = sa.cluster.context + " → " + sb.cluster.context + " · kubestrata " + (CFG.version || "");
+      return;
+    }
+    var m = model(panes[0].cluster), cl = m.snap.cluster;
+    $("status").textContent = m.snap.resources.length + " resources · " + shown + " shown" + match +
+      ((m.snap.errors || []).length ? " · " + m.snap.errors.length + " collection errors" : "");
+    $("meta").textContent = cl.context + " · " + cl.distro + " " + cl.version + " · collected " + fmt(m.snap.collected_at) +
       " · kubestrata " + (CFG.version || "");
   }
   function titles() {
-    panes.forEach(function (p) {
-      var c = model(p.cluster).snap.cluster;
+    panes.forEach(function (p, i) {
+      var s = model(p.cluster).snap, c = s.cluster;
       p.title.textContent = "";
       if (panes.length > 1) {
-        p.title.appendChild(el("b", null, c.context));
-        p.title.appendChild(el("div", null, c.distro + " · " + fmt(model(p.cluster).snap.collected_at)));
+        p.title.appendChild(el("b", null, (COMPARE ? (i === 0 ? "source · " : "target · ") : "") + c.context));
+        p.title.appendChild(el("div", null, c.distro + " " + c.version + " · " + fmt(s.collected_at)));
       }
     });
   }
@@ -588,17 +840,21 @@
     sec = sectors(panes.map(function (p) { return model(p.cluster); }));
     panes.forEach(function (p) { layout(p, sec); });
     syncControls(); legend(); titles(); redraw(); footer(); renderPanel(); saveHash();
+    if (COMPARE) coverage();
   }
 
   // ---- start
   if (!(CFG.clusters || []).length) throw new Error("no clusters in this view");
   if (!DATA[st.cluster]) st.cluster = CFG.clusters[0];
   buildControls();
-  panes.push(makePane(st.cluster));
+  if (COMPARE) CFG.clusters.forEach(function (id) { panes.push(makePane(id)); });
+  else panes.push(makePane(st.cluster));
   window.addEventListener("resize", redraw);
   refresh();
+  var shownAll = 0, drawAll = 0;
+  panes.forEach(function (p) { shownAll += p.shown; drawAll += p.drawMs; });
   body.setAttribute("data-status", "ok");
-  body.setAttribute("data-shown", String(panes[0].shown));
-  body.setAttribute("data-draw-ms", panes[0].drawMs.toFixed(1));
+  body.setAttribute("data-shown", String(shownAll));
+  body.setAttribute("data-draw-ms", drawAll.toFixed(1));
   body.setAttribute("data-total-ms", (performance.now() - T0).toFixed(1));
 })();

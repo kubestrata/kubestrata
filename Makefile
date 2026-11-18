@@ -1,4 +1,4 @@
-.PHONY: build test vet fmt lint check tidy smoke lab-test
+.PHONY: build test vet fmt lint check tidy smoke lab-test page-check
 
 BIN := bin/kubestrata
 
@@ -36,3 +36,9 @@ smoke: build
 # clusters and compares with the lab's ground truth. Skips when no lab is up.
 lab-test:
 	go test -tags lab -count=1 -v ./test/e2e/
+
+# Loads the render and compare pages in headless Chrome for several URL-hash states; fails unless
+# every page reports data-status="ok". Reads the cache only: run `collect` first. Contexts:
+# PAGE_CHECK_SOURCE / PAGE_CHECK_TARGET (default kuberito-source / kuberito-target).
+page-check: build
+	KUBESTRATA_BIN=$(BIN) bash scripts/page-check.sh

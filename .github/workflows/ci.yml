@@ -1,0 +1,60 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+
+      # The lab e2e (test/e2e, build tag lab) is vetted here but runs only locally: it needs a
+      # running kuberito lab (https://github.com/leosavio/kuberito, `make lab-test`).
+      - name: go vet
+        run: go vet ./... && go vet -tags lab ./test/...
+
+      - name: staticcheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@v0.8.2 # 2026.2.2
+          "$(go env GOPATH)/bin/staticcheck" ./...
+
+      - name: cross-compile
+        run: |
+          for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64; do
+            CGO_ENABLED=0 GOOS="${target%/*}" GOARCH="${target#*/}" go build -trimpath -o /dev/null ./cmd/kubestrata
+          done
+
+  # Unit tests. macOS runners bill 10x on private repositories: add macos-15 to a matrix when the
+  # repository is public.
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: go test -race
+        run: go test -race -count=1 ./...

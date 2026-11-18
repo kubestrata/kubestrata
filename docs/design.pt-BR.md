@@ -152,21 +152,73 @@ Pods, ReplicaSets, ReplicationControllers e Jobs são agregados no dono exibido 
 
 ## Comparação
 
-Chave de identidade: `group/kind/namespace/name`. Estados: só na origem (pendente), só no destino
-(novo), igual, drift. O drift usa um fingerprint por kind dos campos relevantes para migração; um
-hash do spec inteiro acusaria diferenças de default entre versões do Kubernetes.
+`kubestrata compare -c <origem> -c <destino>` lê o snapshot mais novo de cada contexto no cache e
+nunca fala com cluster. A comparação é calculada em Go (`internal/compare`), então a tabela da CLI,
+o documento JSON e a página mostram os mesmos números. O JSON guarda a cobertura com 4 casas; a CLI
+(`math.Round`) e a página (`Math.round`) arredondam a porcentagem com a metade para cima, então
+0,125 aparece como 13% nas duas.
 
-| Kind | Fingerprint |
+Chave de identidade: o id do recurso `group/Kind/namespace/name`. Estados (os nomes ficam em
+inglês na CLI, no JSON e na página):
+
+| Estado | Significado | Cor |
+|---|---|---|
+| equal (igual) | nos dois, mesmo fingerprint (`fp`) | `#66bb6a` |
+| drift | nos dois, fingerprint diferente; o detalhe lista os fatos que diferem | `#ffb300` |
+| pending (pendente) | só na origem: ainda não migrado | `#ef5350` |
+| new (novo) | só no destino | `#42a5f5` |
+
+O fingerprint é um hash do kind e dos fatos projetados, **menos um conjunto volátil** (contagem de
+pods, prontidão, restarts, horários de pod e de rollout, execuções de Job, arquiteturas, field
+managers, referências ausentes, revisão e status do Helm, marcas de órfão). Um hash do spec inteiro
+acusaria diferenças de default entre versões do Kubernetes; a projeção por kind decide o que conta:
+
+| Kind | Fatos no fingerprint (principais) |
 |---|---|
-| Deployment, StatefulSet, DaemonSet, DeploymentConfig | imagens (repo:tag@digest), réplicas, requests/limits, nomes de volumes e de envFrom |
+| Deployment, StatefulSet, DaemonSet, DeploymentConfig | imagens, réplicas, requests/limits de CPU e memória, service account, nomes de PVC, node selector (o DeploymentConfig também strategy e triggers) |
 | Service | type, ports |
 | Ingress, Route, HTTPRoute | hosts, paths, nomes dos Secrets de TLS, class |
 | PVC | storageClass, tamanho, accessModes |
 | ConfigMap | nomes de chave + hash do conteúdo |
 | Secret | tipo + número de chaves |
+| ServiceAccount | tipo de identidade de nuvem (`aws-irsa`, ...), número de image pull secrets |
 
-Zoom e pan sincronizados; o hover num nó destaca o par dele. Uma tabela por namespace mostra total
-na origem, total no destino, pendentes, drift, só no destino e cobertura.
+Referências de volume, envFrom e Secret/ConfigMap são arestas, não fatos: não entram no
+fingerprint.
+
+Detalhe do drift = todo fato fora do conjunto volátil cujo valor difere, com os dois valores (o lado
+que não tem o fato fica sem valor). Como a chave inclui group/Kind, uma **tradução de kind** aparece
+como par: uma Route do OpenShift ou um Ingress trocado por uma HTTPRoute da Gateway API fica
+pendente na origem e novo no destino. Parear kinds diferentes é das unidades de migração da F2.
+Objetos com nome gerado (PersistentVolumes `pvc-<uid>`) também nunca formam par.
+
+Resumo por namespace (`_` = escopo de cluster): total na origem, total no destino, equal, drift,
+pending, new e cobertura = (equal + drift) / total na origem, `null` quando a origem não tem nada
+ali. Os totais e a tabela padrão deixam de fora os namespaces de sistema, como a visão padrão.
+
+`--format json` imprime um documento (`schema_version` 1) com `source`, `target`, `totals`,
+`namespaces`, `items` (`id`, `ns`, `kind`, `state`, `diff[]`) e o `index` e a `url` do site:
+
+```json
+{"schema_version": 1,
+ "source": {"cluster_id": "d1f6c4078d11", "context": "source", "distro": "openshift", "resources": 406},
+ "totals": {"ns": "total", "source": 320, "target": 147, "equal": 90, "drift": 44, "pending": 186, "new": 13, "coverage": 0.4188},
+ "items": [{"id": "apps/Deployment/payments/api", "ns": "payments", "kind": "Deployment", "state": "drift",
+            "diff": [{"fact": "images", "source": ["registry/api:2.56"], "target": ["registry/api:2.57"]}]}]}
+```
+
+A página põe os dois clusters lado a lado com setores calculados sobre os dois (mesmo namespace,
+mesmo ângulo), zoom e pan sincronizados e o modo de cor `state` por padrão (categoria, manager e
+time continuam disponíveis). O hover ou a seleção de um recurso destaca o mesmo id nos dois
+painéis; o painel lateral mostra os dois lados e os fatos que diferem. Uma tabela de cobertura
+abaixo dos painéis tem uma linha por namespace. Clicar numa linha liga o filtro de namespace
+(`ns=<namespace>` no hash da URL, `_` para escopo de cluster): os dois painéis e os setores ficam só
+com os recursos cujo namespace é exatamente aquele, a linha fica destacada e um chip no cabeçalho
+mostra o filtro. Clicar de novo na mesma linha, ou no chip, desliga o filtro. O filtro é
+independente da busca (`q`), que continua esmaecendo o que não casa. O rodapé conta cada
+identidade uma vez nos dois painéis; as contagens por estado seguem os filtros ativos (categorias,
+sistema, namespace), e a cobertura é o total de todos os namespaces fora os de sistema, o mesmo
+total da CLI.
 
 ## CLI e TUI
 
@@ -179,19 +231,25 @@ Fang v2 sobre Cobra nos comandos; Bubble Tea v2, Bubbles v2, Lip Gloss v2 e Huh 
 | `kubestrata contexts` | contextos do kubeconfig (sem acessar cluster) |
 | `kubestrata collect [-c ctx]... [--all] [--max-age 6h] [--force]` | grava no cache; reaproveita snapshot mais novo que `--max-age` |
 | `kubestrata render [-c ctx] [--scale 5d\|10d\|30d\|log] [--axis created\|changed] [-o dir] [--open]` | site a partir do cache |
-| `kubestrata compare -c source -c target [--open]` | site lado a lado a partir do cache |
+| `kubestrata compare -c source -c target [--scale ...] [--axis ...] [-o dir] [--open]` | tabela de cobertura no stdout e site lado a lado a partir do cache |
 | `kubestrata cache ls\|prune [--keep 5]` | manutenção dos snapshots |
 
-O estado da página fica no hash da URL (`#scale=log&axis=changed&color=manager&sel=<id>`), então
-uma visão pode virar favorito e ser conferida em modo headless. Uma Content-Security-Policy
-(`default-src 'none'`) mantém a página fora da rede. Depois do primeiro desenho a página grava
-`data-status`, `data-shown`, `data-draw-ms` e `data-total-ms` no `<body>` para checagem
-automatizada. Medido no Chrome headless num M4: 20 000 recursos desenham em cerca de 10–16 ms
-(primeiro desenho em cerca de 50 ms, arquivo de dados de 4,8 MB).
+O estado da página fica no hash da URL
+(`#scale=log&axis=changed&color=manager&ns=<namespace>&sel=<id>`), então uma visão pode virar
+favorito e ser conferida em modo headless; o `ns=` também funciona na visão de um cluster. Uma
+Content-Security-Policy (`default-src 'none'`) mantém a página fora da rede. Depois do primeiro
+desenho a página grava `data-status`, `data-shown` (recursos desenhados, somados nos painéis),
+`data-draw-ms` e `data-total-ms` no `<body>` para checagem automatizada. O `make page-check` grava
+os dois sites a partir do cache, carrega as páginas no Chrome headless em vários estados de hash e
+falha se alguma página não informar `data-status="ok"`. Medido no Chrome headless num M4: 20 000
+recursos desenham em cerca de 10–16 ms (primeiro desenho em cerca de 50 ms, arquivo de dados de
+4,8 MB).
 
-Saída do site (padrão no diretório de cache do usuário): `index.html` (CSS e JS inline, sem CDN),
-`data/<cluster_id>.js` (`window.SNAP["<id>"] = {...}`; tag script, porque o Chrome bloqueia
-`fetch()` de JSON local em `file://`), `json/<cluster_id>.json` para máquina.
+Saída do site (padrão `<diretório de cache>/site` no `render`, `<diretório de cache>/compare` no
+`compare`): `index.html` (CSS e JS inline, sem CDN), `data/<cluster_id>.js`
+(`window.KUBESTRATA["<id>"] = {...}`; tag script, porque o Chrome bloqueia `fetch()` de JSON local
+em `file://`), `json/<cluster_id>.json` para máquina; o `compare` acrescenta `data/compare.js`
+(`window.KUBESTRATA_COMPARE = {...}`) e `json/compare.json`.
 
 ## Fases
 

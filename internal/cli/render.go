@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/leosavio/kubestrata/internal/cache"
 	"github.com/leosavio/kubestrata/internal/render"
 	"github.com/leosavio/kubestrata/internal/snapshot"
 )
@@ -50,14 +51,7 @@ func newRenderCmd(g *globals) *cobra.Command {
 			var snaps []*snapshot.Snapshot
 			var names []string
 			for _, name := range targets {
-				e, ok, err := c.Latest(name)
-				if err != nil {
-					return err
-				}
-				if !ok {
-					return fmt.Errorf("no cached snapshot for %q: run `kubestrata collect -c %s`", name, name)
-				}
-				s, err := c.Load(e)
+				s, err := loadLatest(c, name)
 				if err != nil {
 					return err
 				}
@@ -94,6 +88,18 @@ func newRenderCmd(g *globals) *cobra.Command {
 	cmd.Flags().StringVar(&o.Axis, "axis", "created", "initial time axis: created or changed")
 	cmd.Flags().IntSliceVar(&o.Rings, "rings", nil, "custom rings in days, ascending (e.g. 5,15,30,90,180,365)")
 	return cmd
+}
+
+// loadLatest reads the newest cached snapshot of a context.
+func loadLatest(c *cache.Cache, name string) (*snapshot.Snapshot, error) {
+	e, ok, err := c.Latest(name)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("no cached snapshot for %q: run `kubestrata collect -c %s`", name, name)
+	}
+	return c.Load(e)
 }
 
 func openBrowser(path string) error {

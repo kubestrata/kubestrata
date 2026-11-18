@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/leosavio/kubestrata/internal/compare"
 	"github.com/leosavio/kubestrata/internal/snapshot"
 )
 
@@ -94,8 +95,70 @@ func TestWriteEscapesData(t *testing.T) {
 	}
 }
 
+func comparePair() (*snapshot.Snapshot, *snapshot.Snapshot) {
+	src, tgt := fixture(), fixture()
+	tgt.Cluster.ID, tgt.Cluster.Context, tgt.Cluster.Distro = "ba9876543210", "lab-target", "eks"
+	tgt.Resources[0].Facts = map[string]any{"images": []string{"reg/api:2.57"}}
+	tgt.Resources[0].FP = "sha256:target"
+	tgt.Resources = append(tgt.Resources, snapshot.Resource{ID: "apps/Deployment/payments/fraud", Group: "apps",
+		Version: "v1", Kind: "Deployment", Cat: "workload", NS: "payments", Name: "fraud", Created: tgt.CollectedAt})
+	tgt.Normalize()
+	return src, tgt
+}
+
+func TestWriteCompareIsDeterministic(t *testing.T) {
+	a, b := t.TempDir(), t.TempDir()
+	for _, d := range []string{a, b} {
+		src, tgt := comparePair()
+		o := Options{Mode: "compare", Version: "test", Compare: compare.Compare(src, tgt)}
+		if _, err := Write(d, []*snapshot.Snapshot{src, tgt}, o); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fa, fb := readAll(t, a), readAll(t, b)
+	// index.html + data and json for both snapshots and for the comparison
+	if len(fa) != 7 || fa[filepath.Join("data", "compare.js")] == nil || fa[filepath.Join("json", "compare.json")] == nil {
+		t.Fatalf("files: %d", len(fa))
+	}
+	for name, content := range fa {
+		if !bytes.Equal(content, fb[name]) {
+			t.Errorf("%s differs between two renders", name)
+		}
+	}
+	page := string(fa["index.html"])
+	for _, s := range []string{`"mode":"compare"`, `"clusters":["0123456789ab","ba9876543210"]`,
+		`<script src="data/compare.js"></script>`} {
+		if !strings.Contains(page, s) {
+			t.Errorf("index.html misses %s", s)
+		}
+	}
+	js := fa[filepath.Join("data", "compare.js")]
+	if !bytes.HasPrefix(js, []byte("window.KUBESTRATA_COMPARE={")) || bytes.Contains(js, []byte("</script>")) {
+		t.Errorf("compare.js: %.80s", js)
+	}
+}
+
+func TestWriteCompareRefusesBadInput(t *testing.T) {
+	src, tgt := comparePair()
+	res := compare.Compare(src, tgt)
+	cases := map[string]struct {
+		snaps []*snapshot.Snapshot
+		res   *compare.Result
+	}{
+		"one snapshot":  {[]*snapshot.Snapshot{src}, res},
+		"no comparison": {[]*snapshot.Snapshot{src, tgt}, nil},
+		"same cluster":  {[]*snapshot.Snapshot{src, src}, compare.Compare(src, src)},
+		"swapped":       {[]*snapshot.Snapshot{tgt, src}, res},
+	}
+	for name, c := range cases {
+		if _, err := Write(t.TempDir(), c.snaps, Options{Mode: "compare", Compare: c.res}); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
 func TestOptions(t *testing.T) {
-	bad := []Options{{Scale: "7d"}, {Axis: "deleted"}, {Scale: "custom"}, {Rings: []int{30, 10}}}
+	bad := []Options{{Scale: "7d"}, {Axis: "deleted"}, {Scale: "custom"}, {Rings: []int{30, 10}}, {Mode: "diff"}}
 	for _, o := range bad {
 		if err := o.Validate(); err == nil {
 			t.Errorf("accepted %+v", o)

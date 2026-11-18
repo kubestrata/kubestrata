@@ -16,6 +16,7 @@ __CSS__
   <div class="group" id="clusterGroup"><span class="lbl">cluster</span><select id="cluster"></select></div>
   <div class="group" id="cats"></div>
   <div class="group"><button id="system" class="chip" title="namespaces matching the system pattern">system</button></div>
+  <div class="group" id="nsGroup"></div>
   <div class="group"><span class="lbl">scale</span><span id="scales"></span></div>
   <div class="group"><span class="lbl">axis</span>
     <button data-axis="created" title="metadata.creationTimestamp">created</button>
@@ -25,9 +26,12 @@ __CSS__
   <input type="search" id="q" placeholder="search name, image, label… ( / )">
 </header>
 <main id="main">
-  <div class="panes" id="panes"></div>
+  <div id="stage">
+    <div class="panes" id="panes"></div>
+    <div id="legend"></div>
+  </div>
   <aside id="panel"></aside>
-  <div id="legend"></div>
+  <div id="coverage"></div>
   <div id="tip"></div>
 </main>
 <footer><span id="status"></span><span id="meta"></span></footer>

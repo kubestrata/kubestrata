@@ -3,6 +3,8 @@
 //	index.html            the view, CSS and JS inline, no network
 //	data/<cluster_id>.js  window.KUBESTRATA["<id>"] = <snapshot>
 //	json/<cluster_id>.json the same snapshot for machines
+//	data/compare.js       window.KUBESTRATA_COMPARE = <comparison> (compare mode only)
+//	json/compare.json     the same comparison for machines (compare mode only)
 //
 // Output depends only on the snapshots and the options: the same input gives the same bytes.
 package render
@@ -17,6 +19,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/leosavio/kubestrata/internal/compare"
 	"github.com/leosavio/kubestrata/internal/snapshot"
 	"github.com/leosavio/kubestrata/web"
 )
@@ -34,11 +37,12 @@ var Scales = []string{"5d", "10d", "30d", "log", "custom"}
 
 // Options of a render.
 type Options struct {
-	Mode    string // single (compare comes next)
+	Mode    string // single, or compare (two snapshots: source then target)
 	Scale   string
 	Axis    string
 	Rings   []int
 	Version string
+	Compare *compare.Result // compare mode: the comparison of the two snapshots
 }
 
 type viewConfig struct {
@@ -69,6 +73,8 @@ func (o *Options) Validate() error {
 		ok = ok || s == o.Scale
 	}
 	switch {
+	case o.Mode != "single" && o.Mode != "compare":
+		return fmt.Errorf("render: mode must be single or compare, got %q", o.Mode)
 	case !ok:
 		return fmt.Errorf("--scale must be one of %s", strings.Join(Scales, ", "))
 	case o.Scale == "custom" && len(o.Rings) == 0:
@@ -95,6 +101,16 @@ func Write(dir string, snaps []*snapshot.Snapshot, o Options) (string, error) {
 	if len(snaps) == 0 {
 		return "", fmt.Errorf("render: no snapshots")
 	}
+	if o.Mode == "compare" {
+		switch {
+		case len(snaps) != 2 || o.Compare == nil:
+			return "", fmt.Errorf("render: compare mode needs two snapshots and their comparison")
+		case snaps[0].Cluster.ID == snaps[1].Cluster.ID:
+			return "", fmt.Errorf("render: source and target are the same cluster (%s)", snaps[0].Cluster.ID)
+		case o.Compare.Source.ClusterID != snaps[0].Cluster.ID || o.Compare.Target.ClusterID != snaps[1].Cluster.ID:
+			return "", fmt.Errorf("render: the comparison does not match the snapshots")
+		}
+	}
 	for _, sub := range []string{"", "data", "json"} {
 		if err := os.MkdirAll(filepath.Join(dir, sub), dirMode); err != nil {
 			return "", err
@@ -114,23 +130,17 @@ func Write(dir string, snaps []*snapshot.Snapshot, o Options) (string, error) {
 		}
 		seen[id] = true
 		cfg.Clusters = append(cfg.Clusters, id)
-		raw, err := json.Marshal(s) // escapes <, >, & and U+2028/2029: safe inside a script
-		if err != nil {
-			return "", err
-		}
-		js := "window.KUBESTRATA=window.KUBESTRATA||{};window.KUBESTRATA[\"" + id + "\"]=" + string(raw) + ";\n"
-		if err := writeFile(filepath.Join(dir, "data", id+".js"), []byte(js)); err != nil {
-			return "", err
-		}
-		var pretty bytes.Buffer
-		if err := json.Indent(&pretty, raw, "", "  "); err != nil {
-			return "", err
-		}
-		pretty.WriteByte('\n')
-		if err := writeFile(filepath.Join(dir, "json", id+".json"), pretty.Bytes()); err != nil {
+		js := "window.KUBESTRATA=window.KUBESTRATA||{};window.KUBESTRATA[\"" + id + "\"]="
+		if err := writeDoc(dir, id, js, s); err != nil {
 			return "", err
 		}
 		fmt.Fprintf(&scripts, "<script src=\"data/%s.js\"></script>\n", id)
+	}
+	if o.Mode == "compare" {
+		if err := writeDoc(dir, "compare", "window.KUBESTRATA_COMPARE=", o.Compare); err != nil {
+			return "", err
+		}
+		scripts.WriteString("<script src=\"data/compare.js\"></script>\n")
 	}
 	cfgJSON, err := json.Marshal(cfg)
 	if err != nil {
@@ -145,6 +155,24 @@ func Write(dir string, snaps []*snapshot.Snapshot, o Options) (string, error) {
 	).Replace(web.Index)
 	index := filepath.Join(dir, "index.html")
 	return index, writeFile(index, []byte(page))
+}
+
+// writeDoc writes v as data/<name>.js (a script assigning it after jsPrefix) and as indented
+// json/<name>.json.
+func writeDoc(dir, name, jsPrefix string, v any) error {
+	raw, err := json.Marshal(v) // escapes <, >, & and U+2028/2029: safe inside a script
+	if err != nil {
+		return err
+	}
+	if err := writeFile(filepath.Join(dir, "data", name+".js"), []byte(jsPrefix+string(raw)+";\n")); err != nil {
+		return err
+	}
+	var pretty bytes.Buffer
+	if err := json.Indent(&pretty, raw, "", "  "); err != nil {
+		return err
+	}
+	pretty.WriteByte('\n')
+	return writeFile(filepath.Join(dir, "json", name+".json"), pretty.Bytes())
 }
 
 func htmlAttr(s string) string {

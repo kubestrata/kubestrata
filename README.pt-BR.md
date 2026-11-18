@@ -1,5 +1,9 @@
 # kubestrata
 
+[![CI](https://github.com/leosavio/kubestrata/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/leosavio/kubestrata/actions/workflows/ci.yml?query=branch%3Amain)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
+[![Go 1.27](https://img.shields.io/badge/go-1.27-00ADD8)](go.mod)
+
 [English](README.md)
 
 > **Status: pré-release.** Em desenvolvimento rumo à v0.1.0. As interfaces podem mudar.
@@ -14,16 +18,83 @@ migração aparece como um anel no destino.
 - Somente leitura: só `list` e `get`. Valores de Secret nunca saem do cluster.
 - HTML offline: abra o `index.html` gerado direto do disco.
 
-## Comandos (meta da v0.1.0)
+## Início rápido
+
+Instale com `go install` (Go 1.27 ou mais novo):
+
+```sh
+go install github.com/leosavio/kubestrata/cmd/kubestrata@latest
+```
+
+Ou compile a partir de um clone (o `make build` grava `bin/kubestrata`; o `export` põe o binário
+no `PATH` deste shell):
+
+```sh
+git clone https://github.com/leosavio/kubestrata.git && cd kubestrata
+make build && export PATH="$PWD/bin:$PATH"
+```
+
+Depois rode com um contexto de origem e um de destino do seu kubeconfig (o `kubestrata contexts`
+lista os contextos):
+
+```sh
+kubestrata collect -c <origem> -c <destino>         # inventário somente leitura no cache local
+kubestrata render -c <origem> --open                # visão radial de um cluster
+kubestrata compare -c <origem> -c <destino> --open  # lado a lado, com a cobertura por namespace
+```
+
+`render` e `compare` só leem o cache. Rode `collect --force` para atualizá-lo.
+
+Enquanto o repositório for privado, os dois caminhos precisam de acesso git a ele, e o `go install`
+também precisa de `GOPRIVATE=github.com/leosavio/*`.
+
+### Sem cluster à mão? Teste no lab do kuberito
+
+O [kuberito](https://github.com/leosavio/kuberito) sobe dois clusters locais pequenos no Docker,
+uma origem parecida com OpenShift e um destino parecido com EKS, com uma migração em andamento.
+Instale como o README dele descreve e depois:
+
+```sh
+kuberito up && eval "$(kuberito env)"     # KUBECONFIG=~/.kuberito/kubeconfig neste shell
+kubestrata collect -c kuberito-source -c kuberito-target
+kubestrata compare -c kuberito-source -c kuberito-target --open
+```
+
+## Telas
+
+Visão radial do `kuberito-source`:
+
+![Visão radial do cluster kuberito-source do lab: um setor por namespace com o seu time, recursos coloridos por categoria, os mais novos no centro e os mais antigos na borda em anéis de 30 dias, e um DeploymentConfig obsoleto do legacy-portal selecionado com os fatos e os objetos relacionados no painel lateral](docs/images/radial-kuberito-source.png)
+
+Visão de comparação entre `kuberito-source` e `kuberito-target`:
+
+![Visão de comparação de kuberito-source e kuberito-target lado a lado: recursos coloridos por estado (equal verde, drift âmbar, pending vermelho, new azul), o Deployment payments/api com drift selecionado nos dois painéis com a tag de imagem 2.56 contra 2.57 no painel lateral, e a tabela de cobertura por namespace abaixo dos painéis](docs/images/compare-kuberito-source-target.png)
+
+## Comandos
 
 ```sh
 kubestrata contexts                       # contextos do kubeconfig (disponível)
 kubestrata collect -c source -c target    # snapshot somente leitura no cache local (disponível)
 kubestrata cache ls                       # snapshots no cache (disponível)
 kubestrata render -c source --open        # visão radial, HTML offline (disponível)
-kubestrata compare -c source -c target    # visão lado a lado
-kubestrata                                # TUI interativa
+kubestrata compare -c source -c target    # equal / drift / pending / new e cobertura, HTML lado a lado (disponível)
+kubestrata                                # TUI interativa (planejada)
 ```
+
+`--format json` imprime um documento para máquina com `schema_version` 1.
+
+O `compare` pareia recursos por `group/Kind/namespace/name` (os nomes dos estados ficam em inglês
+na saída):
+
+| Estado | Significado |
+|---|---|
+| equal | nos dois clusters, mesmo fingerprint |
+| drift | nos dois, o fingerprint difere; a página e o JSON listam os fatos que diferem |
+| pending | só na origem: ainda não migrado |
+| new | só no destino |
+
+Cobertura por namespace = (equal + drift) / recursos na origem. Os namespaces de sistema ficam fora
+dos totais.
 
 ## Design
 

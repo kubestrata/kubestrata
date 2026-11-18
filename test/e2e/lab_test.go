@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +18,9 @@ import (
 	"time"
 
 	"github.com/leosavio/kubestrata/internal/collect"
+	"github.com/leosavio/kubestrata/internal/compare"
 	"github.com/leosavio/kubestrata/internal/kube"
+	"github.com/leosavio/kubestrata/internal/render"
 	"github.com/leosavio/kubestrata/internal/snapshot"
 )
 
@@ -38,6 +41,7 @@ type truth struct {
 		Manager string    `json:"manager"`
 		Created time.Time `json:"created"`
 		Changed time.Time `json:"changed"`
+		Wave    string    `json:"wave"` // target only: "1", "2", "3" (migrated) or "new"
 	} `json:"objects"`
 }
 
@@ -130,6 +134,108 @@ func TestLabMatchesTruth(t *testing.T) {
 				t.Errorf("distro %s, want %s", snap.Cluster.Distro, want)
 			}
 		})
+	}
+}
+
+// TestLabCompare checks the comparison of the two lab clusters against the scenario. The lab
+// may hold extra namespaces created by other runs (kuberito-tutorial, kuberito-age-test): the
+// assertions only look at truth objects and at named namespaces, never at totals.
+func TestLabCompare(t *testing.T) {
+	_, src := load(t, "source")
+	tt, tgt := load(t, "target")
+	res := compare.Compare(src, tgt)
+	state := func(id string) compare.Item {
+		it, _ := res.Find(id)
+		return it
+	}
+	diff := func(it compare.Item, fact string) (compare.Diff, bool) {
+		for _, d := range it.Diff {
+			if d.Fact == fact {
+				return d, true
+			}
+		}
+		return compare.Diff{}, false
+	}
+
+	api := state("apps/Deployment/payments/api")
+	if d, ok := diff(api, "images"); api.State != compare.Drift || !ok ||
+		!strings.Contains(fmt.Sprint(d.Source), ":2.56") || !strings.Contains(fmt.Sprint(d.Target), ":2.57") {
+		t.Errorf("payments/api: %+v, want drift on images 2.56 → 2.57", api)
+	}
+	search := state("apps/Deployment/catalog/search")
+	if _, ok := diff(search, "replicas"); search.State != compare.Drift || !ok {
+		t.Errorf("catalog/search: %+v, want drift on replicas", search)
+	}
+	for _, id := range []string{"apps/Deployment/payments/fraud", "apps/Deployment/catalog/recs"} {
+		if st := state(id).State; st != compare.New {
+			t.Errorf("%s: %q, want new", id, st)
+		}
+	}
+	pendingNS := map[string]int{"legacy-portal": 0, "data": 0}
+	for _, it := range res.Items {
+		if _, ok := pendingNS[it.NS]; !ok {
+			continue
+		}
+		pendingNS[it.NS]++
+		if it.State != compare.Pending {
+			t.Errorf("%s: %q, want pending (namespace not migrated)", it.ID, it.State)
+		}
+	}
+	for ns, n := range pendingNS {
+		if n == 0 {
+			t.Errorf("namespace %s: no resources compared", ns)
+		}
+	}
+
+	// Waves 1-3 were migrated, so the source has them. A kind translation is the exception: the
+	// target exposes the app with a Gateway API HTTPRoute where the source had an OpenShift Route
+	// or an Ingress. The identity key holds group/Kind, so the pair shows as pending + new.
+	waves := map[string]int{}
+	for _, o := range tt.Objects {
+		kind := strings.SplitN(o.ID, "/", 3)[1]
+		if o.Wave == "" || folded[kind] || kind == "Namespace" {
+			continue
+		}
+		waves[o.Wave]++
+		st := state(o.ID).State
+		switch {
+		case o.Wave == "new":
+			if st != compare.New {
+				t.Errorf("%s (wave new): %q, want new", o.ID, st)
+			}
+		case st == compare.Equal || st == compare.Drift:
+		case kind == "HTTPRoute" && st == compare.New:
+			p := strings.Split(o.ID, "/")
+			ns, name := p[2], p[3]
+			route, ing := state("route.openshift.io/Route/"+ns+"/"+name), state("networking.k8s.io/Ingress/"+ns+"/"+name)
+			if route.State != compare.Pending && ing.State != compare.Pending {
+				t.Errorf("%s (wave %s): new, and the source has no Route or Ingress %s/%s", o.ID, o.Wave, ns, name)
+			} else {
+				t.Logf("%s (wave %s): kind translated from %s", o.ID, o.Wave, map[bool]string{true: "Route", false: "Ingress"}[route.State == compare.Pending])
+			}
+		default:
+			t.Errorf("%s (wave %s): %q, want equal or drift (migrated)", o.ID, o.Wave, st)
+		}
+	}
+	if waves["1"] == 0 || waves["2"] == 0 || waves["3"] == 0 || waves["new"] == 0 {
+		t.Errorf("truth waves: %v", waves)
+	}
+	tot := res.Totals
+	t.Logf("totals: source %d, target %d, equal %d, drift %d, pending %d, new %d, coverage %.4f; truth waves checked %v",
+		tot.Source, tot.Target, tot.Equal, tot.Drift, tot.Pending, tot.New, *tot.Coverage, waves)
+
+	// the site of the comparison loads the same document
+	dir := t.TempDir()
+	if _, err := render.Write(dir, []*snapshot.Snapshot{src, tgt}, render.Options{Mode: "compare", Version: "e2e", Compare: res}); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "json", "compare.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc compare.Result
+	if err := json.Unmarshal(b, &doc); err != nil || doc.SchemaVersion != 1 || len(doc.Items) != len(res.Items) {
+		t.Fatalf("json/compare.json: schema %d, %d items, err %v", doc.SchemaVersion, len(doc.Items), err)
 	}
 }
 

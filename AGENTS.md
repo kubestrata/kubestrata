@@ -1,7 +1,7 @@
 ---
 type: guide
 summary: "Contrato de contexto do repo kubestrata para agentes: CLI Go (MIT) que coleta inventário somente leitura de clusters Kubernetes e gera visão HTML offline por idade (centro = recente) e comparação lado a lado para migração."
-updated: 2026-11-17
+updated: 2026-11-18
 tags: [agents, kubernetes, migration, inventory]
 ---
 
@@ -32,14 +32,33 @@ Ferramenta de domínio com repo próprio, como o `costgate`.
 | `internal/collect` | projeção por kind | `Source` (interface) testável sem cluster; agregação, arestas, fingerprint, distro |
 | `internal/snapshot` | contrato JSON `schema_version` 1 | gzip; recusa versão maior |
 | `internal/cache` | `~/Library/Caches/kubestrata` (`KUBESTRATA_CACHE_DIR`) | `clusters/<id>/<stamp>.json.gz` + `contexts.json`; escrita atômica |
+| `internal/compare` | Go puro, determinístico | pares por `group/Kind/ns/name`: equal, drift (fatos fora do `volatile` de `collect.go`), pending, new; resumo e cobertura por namespace |
 | TUI (F1) | Bubble Tea v2, Bubbles v2, Lip Gloss v2, Huh v2 (`charm.land/*`) | a implementar |
-| Site (F1) | HTML+CSS+JS inline, zero CDN, canvas 2D, layout polar determinístico | a implementar; modelo de referência: `leosavio-org/knowledge/views/grafo.html` |
+| Site (F1) | HTML+CSS+JS inline (`web/`), zero CDN, canvas 2D, layout polar determinístico | `render` (um cluster) e `compare` (dois painéis, modo de cor `state`, tabela de cobertura); modelo de referência: `leosavio-org/knowledge/views/grafo.html` |
+| CI | GitHub Actions `.github/workflows/ci.yml` | lint (gofmt, vet incl. tag `lab`, staticcheck v0.8.2, cross-compile darwin/linux × arm64/amd64) e `go test -race`; sem job de lab (o e2e precisa do lab `kuberito`) |
 
 Design completo: `docs/design.md`.
 
 ## Estado atual (onde parei)
 
-> Última atualização: 2026-11-17
+> Última atualização: 2026-11-18
+
+Sessão 2026-11-18 (workflow `wf_6f330db99bdf414e`, mudanças sem commit para revisão do
+orquestrador): `compare` pronto. `internal/compare` classifica por id (`equal`/`drift`/`pending`/
+`new`), lista os fatos que diferem no drift e resume por namespace (cobertura = (equal + drift) /
+origem; totais sem namespaces de sistema). `render.Write` ganhou o modo `compare` (`data/compare.js`
++ `json/compare.json`); a página mostra dois painéis com setores comuns, cor `state`, destaque do
+par nos dois lados, painel com os dois lados e tabela de cobertura clicável. No lab: 320 recursos na
+origem, 147 no destino, cobertura 42% (90 equal, 44 drift, 186 pending, 13 new); `payments/api` drift
+de imagem 2.56 → 2.57, `catalog/search` drift de réplicas, `legacy-portal` e `data` 100% pending.
+Achado: HTTPRoute que substitui Route/Ingress aparece como pending + new (a chave inclui o kind).
+CI (`ci.yml`) espelhando o do `kuberito`, sem job de lab. README com badges, início rápido, lab
+`kuberito` e duas telas em `docs/images/`. Correções da revisão (workflow `wf_2e2da1fff3c31361`):
+clique na tabela de cobertura liga o filtro `ns=<namespace>` (igualdade com o namespace, nos dois
+painéis e nos setores, chip no cabeçalho para limpar; a busca `q` continua independente); CLI
+arredonda com `math.Round` como o `Math.round` da página; rodapé rotula as bases (identidade contada
+uma vez, estados com os filtros ativos, cobertura sem sistema); `make page-check` no repo
+(`scripts/page-check.sh`); início rápido com `git clone` + `make build` + `export PATH`.
 
 1ª sessão (2026-11-17): repo criado (privado); `contexts`, `collect` e `cache ls|prune`
 funcionando. `collect` usa discovery, list paginado, Secrets pela Table do servidor (só metadata,
@@ -58,9 +77,11 @@ verdade-base do lab: 0 divergência, 0 vazamento.
 
 - [x] F1: `collect` (discovery, list paginado, projeção sanitizada, identidade do cluster) + cache com TTL
 - [x] F1: `render` (site radial, escalas 5d/10d/30d/log/custom, eixo criado/alterado, filtros, busca, painel, cor por categoria/manager/time)
-- [ ] F1: `compare` (identidade, fingerprint por kind, tabela de cobertura)
-- [ ] F1: TUI básica; teste de não vazamento sobre cache e site; golden de render; e2e em 2 clusters locais
-- [ ] v0.1.0: CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, CI, release; depois tornar o repo público
+- [x] F1: `compare` (identidade, fingerprint, drift com fatos, tabela de cobertura, site lado a lado; e2e no lab)
+- [ ] CI: `.github/workflows/ci.yml` (lint + test -race) escrito; marcar depois da primeira execução verde no GitHub
+- [ ] F1: TUI básica; teste de não vazamento sobre o site; golden de render
+- [ ] F2: parear tradução de kind (Route/Ingress → HTTPRoute) e PVs de nome gerado nas unidades de migração
+- [ ] v0.1.0: CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, release; depois tornar o repo público
 
 ## Comandos essenciais
 
@@ -69,7 +90,10 @@ make check        # gofmt + vet + staticcheck (se instalado) + test -race + buil
 make fmt-fix      # gofmt -w
 make smoke        # binário contra o kubeconfig local (sem acessar cluster)
 make lab-test     # e2e contra o lab kuberito rodando (pula se não houver lab)
+make page-check   # render + compare do cache, Chrome headless em vários estados de hash; falha sem data-status="ok"
+                  # (KUBESTRATA_CACHE_DIR; PAGE_CHECK_SOURCE/PAGE_CHECK_TARGET, padrão kuberito-source/kuberito-target)
 bin/kubestrata render -c <ctx> --open   # site offline a partir do cache
+bin/kubestrata compare -c <origem> -c <destino> --open   # tabela de cobertura + site lado a lado
 KUBESTRATA_CACHE_DIR=/tmp/ks bin/kubestrata collect -c <ctx> --force   # coleta real, cache isolado
 ```
 
