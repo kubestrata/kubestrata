@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/leosavio/kubestrata/internal/compare"
+	"github.com/leosavio/kubestrata/internal/redact"
 	"github.com/leosavio/kubestrata/internal/render"
 	"github.com/leosavio/kubestrata/internal/snapshot"
 )
@@ -23,7 +24,7 @@ type compareDoc struct {
 }
 
 func newCompareCmd(g *globals) *cobra.Command {
-	var contexts []string
+	var contexts, rings []string
 	var out string
 	var open bool
 	o := render.Options{Mode: "compare"}
@@ -41,7 +42,7 @@ func newCompareCmd(g *globals) *cobra.Command {
 			if err := g.checkFormat(); err != nil {
 				return err
 			}
-			if err := o.Validate(); err != nil {
+			if err := scaleOptions(&o, rings); err != nil {
 				return err
 			}
 			if len(contexts) != 2 || contexts[0] == contexts[1] {
@@ -65,6 +66,16 @@ func newCompareCmd(g *globals) *cobra.Command {
 			res := compare.Compare(snaps[0], snaps[1])
 			if out == "" {
 				out = filepath.Join(c.Dir, "compare")
+			}
+			// compared on the real values, masked for output and site
+			if snaps, err = g.snapshots(snaps); err != nil {
+				return err
+			}
+			if g.redact {
+				if res, err = redact.Copy(res); err != nil {
+					return err
+				}
+				res.Source.Context, res.Target.Context = redact.Name(res.Source.Context), redact.Name(res.Target.Context)
 			}
 			o.Version, o.Compare = g.version, res
 			index, err := render.Write(out, snaps, o)
@@ -90,9 +101,7 @@ func newCompareCmd(g *globals) *cobra.Command {
 	cmd.Flags().StringSliceVarP(&contexts, "context", "c", nil, "source context, then target context")
 	cmd.Flags().StringVarP(&out, "output", "o", "", "output directory (default: <cache dir>/compare)")
 	cmd.Flags().BoolVar(&open, "open", false, "open the page in the default browser")
-	cmd.Flags().StringVar(&o.Scale, "scale", "30d", "initial ring scale: 5d, 10d, 30d, log or custom")
-	cmd.Flags().StringVar(&o.Axis, "axis", "created", "initial time axis: created or changed")
-	cmd.Flags().IntSliceVar(&o.Rings, "rings", nil, "custom rings in days, ascending (e.g. 5,15,30,90,180,365)")
+	addScaleFlags(cmd, &o, &rings)
 	return cmd
 }
 

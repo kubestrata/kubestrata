@@ -29,7 +29,10 @@ metadata:
   name: node1
   uid: node1
   creationTimestamp: "2023-01-01T00:00:00Z"
-  labels: {topology.kubernetes.io/zone: zone-a}
+  labels:
+    topology.kubernetes.io/zone: zone-a
+    node.kubernetes.io/instance-type: m7g.large
+    karpenter.sh/capacity-type: on-demand
 spec: {providerID: "kind://docker/lab/node1"}
 status: {nodeInfo: {architecture: arm64, kubeletVersion: v1.35.0}}
 ---
@@ -276,3 +279,179 @@ spec:
   template:
     metadata: {labels: {app: db-proxy}}
     spec: {containers: [{name: proxy, image: pgbouncer:1.23}]}
+---
+# System namespaces: the Kubernetes ones by exact name, the cloud ones by prefix.
+apiVersion: v1
+kind: Namespace
+metadata: {name: kube-prometheus-stack, uid: ns-kps, creationTimestamp: "2026-11-10T00:00:00Z"}
+---
+apiVersion: v1
+kind: Namespace
+metadata: {name: amazon-cloudwatch, uid: ns-cw, creationTimestamp: "2026-11-10T00:00:00Z"}
+---
+# Managers: Terraform (field manager HashiCorp) and the EKS control plane (eks).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tf-runner
+  namespace: payments
+  uid: sa-tf-runner
+  creationTimestamp: "2026-11-10T00:00:00Z"
+  managedFields:
+    - {manager: HashiCorp, operation: Update, time: "2026-11-10T00:00:00Z"}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aws-auth
+  namespace: kube-system
+  uid: cm-aws-auth
+  creationTimestamp: "2026-11-10T00:00:00Z"
+  managedFields:
+    - {manager: eks, operation: Update, time: "2026-11-10T00:00:00Z"}
+data: {mapRoles: "LEAK-MAPROLES arn:aws:iam::000000000000:role/nodes"}
+---
+# Spark: the operator owns the driver pod, the driver owns its executor pods.
+apiVersion: v1
+kind: Namespace
+metadata: {name: spark-team-a, uid: ns-spark, creationTimestamp: "2026-11-10T00:00:00Z"}
+---
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: order-ondemand
+  namespace: spark-team-a
+  uid: cr-spark-order
+  creationTimestamp: "2026-11-16T10:00:00Z"
+  managedFields:
+    - {manager: kubectl-client-side-apply, operation: Update, time: "2026-11-16T10:00:00Z"}
+spec: {type: Scala, mode: cluster, image: "spark:3.5", sparkConf: {spark.hadoop.fs.s3a.secret.key: LEAK-SPARK-CONF}}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: order-ondemand-driver
+  namespace: spark-team-a
+  uid: pod-spark-driver
+  creationTimestamp: "2026-11-16T10:00:05Z"
+  ownerReferences: [{apiVersion: sparkoperator.k8s.io/v1beta2, kind: SparkApplication, name: order-ondemand, uid: cr-spark-order, controller: true}]
+spec: {nodeName: node1, containers: [{name: spark-kubernetes-driver, image: "spark:3.5"}]}
+status:
+  phase: Running
+  conditions: [{type: Ready, status: "True"}]
+  containerStatuses: [{name: spark-kubernetes-driver, restartCount: 0}]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: order-ondemand-exec-1
+  namespace: spark-team-a
+  uid: pod-spark-exec-1
+  creationTimestamp: "2026-11-16T10:00:30Z"
+  ownerReferences: [{apiVersion: v1, kind: Pod, name: order-ondemand-driver, uid: pod-spark-driver, controller: true}]
+spec: {nodeName: node1, containers: [{name: spark-kubernetes-executor, image: "spark:3.5"}]}
+status:
+  phase: Running
+  conditions: [{type: Ready, status: "True"}]
+  containerStatuses: [{name: spark-kubernetes-executor, restartCount: 1}]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: order-ondemand-exec-2
+  namespace: spark-team-a
+  uid: pod-spark-exec-2
+  creationTimestamp: "2026-11-16T10:00:31Z"
+  ownerReferences: [{apiVersion: v1, kind: Pod, name: order-ondemand-driver, uid: pod-spark-driver, controller: true}]
+spec: {nodeName: node1, containers: [{name: spark-kubernetes-executor, image: "spark:3.5"}]}
+status:
+  phase: Running
+  conditions: [{type: Ready, status: "False"}]
+  containerStatuses: [{name: spark-kubernetes-executor, restartCount: 2}]
+---
+# Karpenter / EKS Auto Mode. Terraform created the NodePool; Auto Mode wrote defaults into it in
+# the same second (listed first). The status values must not reach the facts.
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: general-purpose
+  uid: np-general
+  creationTimestamp: "2026-11-10T00:00:00Z"
+  managedFields:
+    - {manager: eks-auto-mode, operation: Update, time: "2026-11-10T00:00:00Z"}
+    - {manager: HashiCorp, operation: Update, time: "2026-11-10T00:00:00Z"}
+spec:
+  weight: 10
+  limits: {cpu: 1000, memory: 1000Gi}
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 30s
+    budgets: [{nodes: "10%"}, {nodes: "0", reasons: [Drifted, Underutilized], schedule: "0 9 * * mon-fri", duration: 8h}]
+  template:
+    spec:
+      expireAfter: 336h
+      nodeClassRef: {group: eks.amazonaws.com, kind: NodeClass, name: default}
+      requirements:
+        - {key: karpenter.sh/capacity-type, operator: In, values: [spot, on-demand]}
+        - {key: eks.amazonaws.com/instance-category, operator: In, values: [m, c]}
+        - {key: kubernetes.io/arch, operator: Exists}
+status: {resources: {cpu: "STATUS-4"}, nodes: 2}
+---
+apiVersion: karpenter.sh/v1
+kind: NodeClaim
+metadata:
+  name: general-purpose-abcde
+  uid: nc-abcde
+  creationTimestamp: "2026-11-16T09:00:00Z"
+  labels:
+    karpenter.sh/nodepool: general-purpose
+    karpenter.sh/capacity-type: on-demand
+    node.kubernetes.io/instance-type: m7g.large
+    topology.kubernetes.io/zone: zone-a
+  ownerReferences: [{apiVersion: karpenter.sh/v1, kind: NodePool, name: general-purpose, uid: np-general, blockOwnerDeletion: true}]
+  managedFields:
+    - {manager: eks-auto-mode, operation: Update, time: "2026-11-16T09:00:00Z"}
+spec:
+  nodeClassRef: {group: eks.amazonaws.com, kind: NodeClass, name: default}
+  requirements: [{key: karpenter.sh/capacity-type, operator: In, values: [spot, on-demand]}]
+status: {nodeName: node1, providerID: "aws:///zone-a/i-0000000000000000"}
+---
+apiVersion: karpenter.sh/v1
+kind: NodeClaim
+metadata:
+  name: general-purpose-fghij
+  uid: nc-fghij
+  creationTimestamp: "2026-11-16T09:30:00Z"
+  labels: {karpenter.sh/nodepool: general-purpose}
+  ownerReferences: [{apiVersion: karpenter.sh/v1, kind: NodePool, name: general-purpose, uid: np-general, blockOwnerDeletion: true}]
+spec:
+  nodeClassRef: {group: eks.amazonaws.com, kind: NodeClass, name: default}
+  requirements:
+    - {key: node.kubernetes.io/instance-type, operator: In, values: [c6a.xlarge]}
+    - {key: topology.kubernetes.io/zone, operator: In, values: [zone-b, zone-c]}
+    - {key: karpenter.sh/capacity-type, operator: In, values: [spot]}
+---
+apiVersion: eks.amazonaws.com/v1
+kind: NodeClass
+metadata:
+  name: default
+  uid: ncl-default
+  creationTimestamp: "2026-11-10T00:00:00Z"
+  managedFields:
+    - {manager: eks-auto-mode, operation: Update, time: "2026-11-10T00:00:00Z"}
+spec:
+  role: LEAK-NODE-ROLE
+  ephemeralStorage: {size: 80Gi, iops: 3000, throughput: 125}
+---
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: default
+  uid: ec2nc-default
+  creationTimestamp: "2026-11-10T00:00:00Z"
+  managedFields:
+    - {manager: terraform-provider-kubectl_v1.19.0, operation: Update, time: "2026-11-10T00:00:00Z"}
+spec:
+  userData: "LEAK-USERDATA"
+  blockDeviceMappings:
+    - {deviceName: /dev/xvda, ebs: {volumeSize: 100Gi, volumeType: gp3, iops: 6000, throughput: 1000, encrypted: true}}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -36,6 +37,12 @@ var resourceOf = map[string]APIResource{
 	"route.openshift.io/Route":           {Group: "route.openshift.io", Version: "v1", Resource: "routes", Kind: "Route", Namespaced: true, CRD: true},
 	"apps.openshift.io/DeploymentConfig": {Group: "apps.openshift.io", Version: "v1", Resource: "deploymentconfigs", Kind: "DeploymentConfig", Namespaced: true, CRD: true},
 	"db.example.com/Database":            {Group: "db.example.com", Version: "v1", Resource: "databases", Kind: "Database", Namespaced: true, CRD: true},
+	"sparkoperator.k8s.io/SparkApplication": {Group: "sparkoperator.k8s.io", Version: "v1beta2", Resource: "sparkapplications",
+		Kind: "SparkApplication", Namespaced: true, CRD: true},
+	"karpenter.sh/NodePool":          {Group: "karpenter.sh", Version: "v1", Resource: "nodepools", Kind: "NodePool", CRD: true},
+	"karpenter.sh/NodeClaim":         {Group: "karpenter.sh", Version: "v1", Resource: "nodeclaims", Kind: "NodeClaim", CRD: true},
+	"eks.amazonaws.com/NodeClass":    {Group: "eks.amazonaws.com", Version: "v1", Resource: "nodeclasses", Kind: "NodeClass", CRD: true},
+	"karpenter.k8s.aws/EC2NodeClass": {Group: "karpenter.k8s.aws", Version: "v1", Resource: "ec2nodeclasses", Kind: "EC2NodeClass", CRD: true},
 }
 
 type fakeSource struct {
@@ -68,7 +75,21 @@ func loadFake(t *testing.T) *fakeSource {
 		f.objs[gr] = append(f.objs[gr], u)
 	}
 	ts := func(s string) time.Time { t, _ := time.Parse(time.RFC3339, s); return t }
+	mf := func(at string, managers ...string) []metav1.ManagedFieldsEntry {
+		t := metav1.NewTime(ts(at))
+		var out []metav1.ManagedFieldsEntry
+		for _, m := range managers {
+			out = append(out, metav1.ManagedFieldsEntry{Manager: m, Operation: "Update", Time: &t})
+		}
+		return out
+	}
 	f.secrets = []SecretMeta{
+		// Terraform created the token Secret, the token controller filled it in the same second
+		{Name: "tf-sa-token", NS: "payments", Type: "kubernetes.io/service-account-token", Keys: 3, UID: "sec-tf-token",
+			Created: ts("2026-11-10T00:00:00Z"), ManagedFields: mf("2026-11-10T00:00:00Z", "kube-controller-manager", "HashiCorp")},
+		// only the control plane wrote it
+		{Name: "bootstrap-token-abcdef", NS: "kube-system", Type: "bootstrap.kubernetes.io/token", Keys: 4, UID: "sec-boot",
+			Created: ts("2026-11-10T00:00:00Z"), ManagedFields: mf("2026-11-10T00:00:00Z", "kube-controller-manager")},
 		{Name: "api-db", NS: "payments", Type: "Opaque", Keys: 2, UID: "sec-api-db", Created: ts("2025-01-10T00:00:00Z")},
 		{Name: "api-tls", NS: "payments", Type: "kubernetes.io/tls", Keys: 2, UID: "sec-api-tls", Created: ts("2025-01-10T00:00:00Z")},
 		{Name: "sh.helm.release.v1.api.v3", NS: "payments", Type: "helm.sh/release.v1", Keys: 1, UID: "sec-helm",
@@ -180,11 +201,20 @@ func TestTimesAndManagers(t *testing.T) {
 		t.Fatalf("changed = %v (status updates must be ignored)", api.Changed)
 	}
 	cases := map[string]string{
-		"apps/Deployment/payments/api":                   MgrHelm,
-		"apps/Deployment/payments/db-proxy":              MgrOperator,
-		"route.openshift.io/Route/legacy/web":            MgrKubectl,
-		"core/Secret/payments/sh.helm.release.v1.api.v3": MgrHelm,
-		"core/Service/payments/api":                      MgrUnknown,
+		"apps/Deployment/payments/api":                                      MgrHelm,
+		"apps/Deployment/payments/db-proxy":                                 MgrOperator,
+		"route.openshift.io/Route/legacy/web":                               MgrKubectl,
+		"core/Secret/payments/sh.helm.release.v1.api.v3":                    MgrHelm,
+		"core/Service/payments/api":                                         MgrUnknown,
+		"core/ServiceAccount/payments/tf-runner":                            MgrTerraform,
+		"core/Secret/payments/tf-sa-token":                                  MgrTerraform,
+		"core/Secret/kube-system/bootstrap-token-abcdef":                    MgrPlatform,
+		"core/ConfigMap/kube-system/aws-auth":                               MgrPlatform,
+		"karpenter.sh/NodePool/_/general-purpose":                           MgrTerraform,
+		"karpenter.sh/NodeClaim/_/general-purpose-abcde":                    MgrOperator,
+		"eks.amazonaws.com/NodeClass/_/default":                             MgrPlatform,
+		"karpenter.k8s.aws/EC2NodeClass/_/default":                          MgrTerraform,
+		"sparkoperator.k8s.io/SparkApplication/spark-team-a/order-ondemand": MgrKubectl,
 	}
 	for id, want := range cases {
 		if got := find(t, snap, id).Manager; got != want {
@@ -261,6 +291,193 @@ func TestDeterministic(t *testing.T) {
 	b, _ := json.Marshal(collectFixture(t))
 	if !bytes.Equal(a, b) {
 		t.Fatal("two collections of the same state differ")
+	}
+}
+
+func TestSystemNamespaces(t *testing.T) {
+	re := regexp.MustCompile(DefaultSystemNS)
+	for ns, want := range map[string]bool{
+		"kube-system": true, "kube-public": true, "kube-node-lease": true, "local-path-storage": true,
+		"openshift": true, "openshift-ingress": true, "amazon-cloudwatch": true, "aws-observability": true,
+		"gke-managed-system": true, "azure-arc": true,
+		"kube-prometheus-stack": false, "kube-system-extra": false, "openshiftx": false, "payments": false,
+		"spark-team-a": false, "my-amazon-app": false, "local-path-storage-2": false,
+	} {
+		if got := re.MatchString(ns); got != want {
+			t.Errorf("%s: system %v, want %v", ns, got, want)
+		}
+	}
+	snap := collectFixture(t)
+	sys := map[string]bool{}
+	for _, n := range snap.Namespaces {
+		sys[n.Name] = n.System
+	}
+	if !sys["kube-system"] || !sys["amazon-cloudwatch"] || sys["kube-prometheus-stack"] || sys["payments"] {
+		t.Errorf("namespace system flags: %v", sys)
+	}
+}
+
+// Pods owned by a custom resource fold into it like into a Deployment: the operator owns the
+// driver pod, the driver owns the executor pods (K2).
+func TestPodsAggregateIntoCustomResource(t *testing.T) {
+	snap := collectFixture(t)
+	app := find(t, snap, "sparkoperator.k8s.io/SparkApplication/spark-team-a/order-ondemand")
+	at := func(s string) time.Time { v, _ := time.Parse(time.RFC3339, s); return v }
+	f := app.Facts
+	if f["pods"] != int64(3) || f["ready"] != int64(2) || f["restarts"] != int64(3) {
+		t.Fatalf("pods/ready/restarts: %v", f)
+	}
+	if archs, _ := f["archs"].([]string); len(archs) != 1 || archs[0] != "arm64" {
+		t.Errorf("archs = %v", f["archs"])
+	}
+	if got, _ := f["pod_oldest"].(time.Time); !got.Equal(at("2026-11-16T10:00:05Z")) {
+		t.Errorf("pod_oldest = %v", f["pod_oldest"])
+	}
+	if got, _ := f["pod_newest"].(time.Time); !got.Equal(at("2026-11-16T10:00:31Z")) {
+		t.Errorf("pod_newest = %v", f["pod_newest"])
+	}
+	for _, r := range snap.Resources {
+		if r.Kind == "Pod" && r.NS == "spark-team-a" {
+			t.Errorf("Spark pod shown on its own: %s", r.ID)
+		}
+	}
+}
+
+// Karpenter and EKS Auto Mode facts come from labels and spec, never from status (K4).
+func TestNodeProvisioningFacts(t *testing.T) {
+	snap := collectFixture(t)
+	str := func(v any) string { b, _ := json.Marshal(v); return string(b) }
+	want := map[string]map[string]string{
+		"karpenter.sh/NodeClaim/_/general-purpose-abcde": {
+			"instance_type": `"m7g.large"`, "capacity_type": `"on-demand"`, "zone": `"zone-a"`,
+			"nodepool": `"general-purpose"`, "node_class": `"eks.amazonaws.com/NodeClass/default"`, "node": `"node1"`},
+		// no labels yet: single-valued requirements fill in, a requirement with two zones does not
+		"karpenter.sh/NodeClaim/_/general-purpose-fghij": {
+			"instance_type": `"c6a.xlarge"`, "capacity_type": `"spot"`, "nodepool": `"general-purpose"`},
+		"karpenter.sh/NodePool/_/general-purpose": {
+			"requirements": `["eks.amazonaws.com/instance-category In c,m","karpenter.sh/capacity-type In on-demand,spot","kubernetes.io/arch Exists"]`,
+			"limits":       `["cpu=1000","memory=1000Gi"]`, "weight": `10`, "node_class": `"eks.amazonaws.com/NodeClass/default"`,
+			"expire_after": `"336h"`, "consolidation_policy": `"WhenEmptyOrUnderutilized"`, "consolidate_after": `"30s"`,
+			"disruption_budgets": `["nodes=10%","nodes=0 reasons=Drifted,Underutilized schedule=0 9 * * mon-fri for 8h"]`},
+		"eks.amazonaws.com/NodeClass/_/default": {
+			"ephemeral_storage": `{"iops":3000,"size":"80Gi","throughput":125}`},
+		"karpenter.k8s.aws/EC2NodeClass/_/default": {
+			"block_devices": `[{"device":"/dev/xvda","iops":6000,"size":"100Gi","throughput":1000,"type":"gp3"}]`},
+	}
+	for id, facts := range want {
+		r := find(t, snap, id)
+		for k, v := range facts {
+			if got := str(r.Facts[k]); got != v {
+				t.Errorf("%s %s = %s, want %s", id, k, got, v)
+			}
+		}
+	}
+	if _, ok := find(t, snap, "karpenter.sh/NodeClaim/_/general-purpose-fghij").Facts["zone"]; ok {
+		t.Error("zone set from a requirement with two values")
+	}
+	if !hasEdge(snap, "karpenter.sh/NodePool/_/general-purpose", "karpenter.sh/NodeClaim/_/general-purpose-abcde", RelOwns) {
+		t.Error("NodePool does not own its NodeClaim")
+	}
+	plain, _ := json.Marshal(snap)
+	if bytes.Contains(plain, []byte("STATUS-")) {
+		t.Error("NodePool status reached the snapshot")
+	}
+	// the node's status (node name) stays out of the fingerprint; spec facts are in it
+	nc := find(t, snap, "karpenter.sh/NodeClaim/_/general-purpose-abcde")
+	moved := map[string]any{}
+	for k, v := range nc.Facts {
+		moved[k] = v
+	}
+	moved["node"] = "node2"
+	if fingerprint(nc.Kind, moved) != nc.FP {
+		t.Error("the NodeClaim node name changes the fingerprint")
+	}
+	moved["instance_type"] = "m7g.xlarge"
+	if fingerprint(nc.Kind, moved) == nc.FP {
+		t.Error("the NodeClaim instance type is not in the fingerprint")
+	}
+	n := snap.Cluster.Nodes
+	if n.InstanceTypes["m7g.large"] != 1 || n.CapacityTypes["on-demand"] != 1 {
+		t.Errorf("node summary: %+v", n)
+	}
+}
+
+func TestCapacityType(t *testing.T) {
+	for _, c := range []struct {
+		labels map[string]string
+		want   string
+	}{
+		{map[string]string{"karpenter.sh/capacity-type": "spot"}, "spot"},
+		{map[string]string{"eks.amazonaws.com/capacityType": "ON_DEMAND"}, "on-demand"},
+		{map[string]string{"eks.amazonaws.com/capacityType": "CAPACITY_BLOCK"}, "capacity-block"},
+		{map[string]string{"cloud.google.com/gke-spot": "true"}, "spot"},
+		{map[string]string{"cloud.google.com/gke-preemptible": "true"}, "preemptible"},
+		{map[string]string{"kubernetes.azure.com/scalesetpriority": "spot"}, "spot"},
+		{map[string]string{"kubernetes.io/arch": "amd64"}, ""},
+	} {
+		if got := capacityType(c.labels); got != c.want {
+			t.Errorf("%v → %q, want %q", c.labels, got, c.want)
+		}
+	}
+}
+
+func TestManagerVocabulary(t *testing.T) {
+	ts := func(s string) *metav1.Time { v, _ := time.Parse(time.RFC3339, s); mt := metav1.NewTime(v); return &mt }
+	t1, t2 := ts("2026-11-10T00:00:00Z"), ts("2026-11-10T00:05:00Z")
+	e := func(m string, at *metav1.Time) metav1.ManagedFieldsEntry {
+		return metav1.ManagedFieldsEntry{Manager: m, Operation: "Update", Time: at}
+	}
+	cases := []struct {
+		name   string
+		labels map[string]string
+		mf     []metav1.ManagedFieldsEntry
+		ownCR  bool
+		want   string
+	}{
+		{"terraform kubernetes provider", nil, []metav1.ManagedFieldsEntry{e("HashiCorp", t1)}, false, MgrTerraform},
+		{"terraform server-side apply", nil, []metav1.ManagedFieldsEntry{e("Terraform", t1)}, false, MgrTerraform},
+		{"terraform helm provider", nil, []metav1.ManagedFieldsEntry{e("terraform-provider-helm_v2.17.0_x5", t1)}, false, MgrTerraform},
+		{"terraform, then Auto Mode", nil, []metav1.ManagedFieldsEntry{e("HashiCorp", t1), e("eks-auto-mode", t2)}, false, MgrTerraform},
+		{"Auto Mode tie goes to terraform", nil, []metav1.ManagedFieldsEntry{e("eks-auto-mode", t1), e("HashiCorp", t1)}, false, MgrTerraform},
+		{"eks", nil, []metav1.ManagedFieldsEntry{e("eks", t1)}, false, MgrPlatform},
+		{"eks-internal", nil, []metav1.ManagedFieldsEntry{e("eks-internal", t1)}, false, MgrPlatform},
+		{"eks-auto-mode only", nil, []metav1.ManagedFieldsEntry{e("eks-auto-mode", t1)}, false, MgrPlatform},
+		{"kube-apiserver only", nil, []metav1.ManagedFieldsEntry{e("kube-apiserver", t1)}, false, MgrPlatform},
+		{"kubeadm bootstrap", nil, []metav1.ManagedFieldsEntry{e("kubeadm", t1)}, false, MgrPlatform},
+		{"kube-controller-manager only", nil, []metav1.ManagedFieldsEntry{e("kube-controller-manager", t1)}, false, MgrPlatform},
+		{"kube-controller-manager after kubectl", nil,
+			[]metav1.ManagedFieldsEntry{e("kube-controller-manager", t1), e("kubectl-create", t2)}, false, MgrKubectl},
+		{"eks, then kubectl edit", nil, []metav1.ManagedFieldsEntry{e("eks", t1), e("kubectl-edit", t2)}, false, MgrPlatform},
+		{"helm label wins over terraform", map[string]string{"app.kubernetes.io/managed-by": "Helm"},
+			[]metav1.ManagedFieldsEntry{e("terraform-provider-helm_v2.17.0_x5", t1)}, false, MgrHelm},
+		{"argocd label wins over eks", map[string]string{"argocd.argoproj.io/instance": "x"},
+			[]metav1.ManagedFieldsEntry{e("eks", t1)}, false, MgrArgoCD},
+		{"custom resource owner wins over platform", nil, []metav1.ManagedFieldsEntry{e("eks-auto-mode", t1)}, true, MgrOperator},
+		{"unknown tool", nil, []metav1.ManagedFieldsEntry{e("pulumi-kubernetes", t1)}, false, MgrOther},
+		{"no data", nil, nil, false, MgrUnknown},
+	}
+	for _, c := range cases {
+		if got, _ := classifyManager(c.labels, nil, c.mf, c.ownCR); got != c.want {
+			t.Errorf("%s: %s, want %s", c.name, got, c.want)
+		}
+	}
+}
+
+// manager is a resource field and field_managers a volatile fact: neither enters the
+// fingerprint, so a move from kubectl to Terraform is not a drift.
+func TestFingerprintIgnoresManagers(t *testing.T) {
+	facts := map[string]any{"images": []string{"a:1"}, "field_managers": []string{"kubectl-client-side-apply"}}
+	other := map[string]any{"images": []string{"a:1"}, "field_managers": []string{"HashiCorp", "eks-auto-mode"}}
+	if fingerprint("Deployment", facts) != fingerprint("Deployment", other) {
+		t.Error("field_managers changes the fingerprint")
+	}
+	if !Volatile("field_managers") {
+		t.Error("field_managers is not volatile")
+	}
+	snap := collectFixture(t)
+	sa := find(t, snap, "core/ServiceAccount/payments/tf-runner")
+	if sa.FP != fingerprint(sa.Kind, sa.Facts) {
+		t.Error("fingerprint depends on more than the kind and the facts")
 	}
 }
 

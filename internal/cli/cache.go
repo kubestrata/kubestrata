@@ -14,7 +14,7 @@ func newCacheCmd(g *globals) *cobra.Command {
 	cmd := &cobra.Command{Use: "cache", Short: "Inspect and prune cached snapshots"}
 	cmd.AddCommand(&cobra.Command{
 		Use:   "ls",
-		Short: "List cached snapshots, newest first",
+		Short: "List cached snapshots, newest first (STAMP feeds diff --from/--to)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := g.checkFormat(); err != nil {
@@ -28,6 +28,9 @@ func newCacheCmd(g *globals) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			for i := range all {
+				all[i].Context = g.mask(all[i].Context)
+			}
 			if g.format == "json" {
 				return writeJSON(cmd.OutOrStdout(), struct {
 					SchemaVersion int           `json:"schema_version"`
@@ -35,9 +38,10 @@ func newCacheCmd(g *globals) *cobra.Command {
 					Snapshots     []cache.Entry `json:"snapshots"`
 				}{SchemaVersion, c.Dir, all})
 			}
-			t := newTable("CLUSTER", "CONTEXT", "COLLECTED", "AGE")
+			// STAMP is what `kubestrata diff --from/--to` takes
+			t := newTable("CLUSTER", "CONTEXT", "STAMP", "COLLECTED", "AGE")
 			for _, e := range all {
-				t.Row(e.ClusterID, e.Context, e.CollectedAt.Format(time.RFC3339), time.Since(e.CollectedAt).Round(time.Minute).String())
+				t.Row(e.ClusterID, e.Context, e.Stamp, e.CollectedAt.Format(time.RFC3339), time.Since(e.CollectedAt).Round(time.Minute).String())
 			}
 			_, err = lipgloss.Fprintln(cmd.OutOrStdout(), c.Dir+"\n"+t.String())
 			return err

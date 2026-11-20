@@ -20,10 +20,12 @@ shows up as a ring in the target.
 
 ## Quick start
 
-Install with `go install` (Go 1.27 or newer):
+Install with `go install` (Go 1.27 or newer). The binary lands in `$(go env GOPATH)/bin`, which
+must be on your `PATH`:
 
 ```sh
 go install github.com/leosavio/kubestrata/cmd/kubestrata@latest
+export PATH="$(go env GOPATH)/bin:$PATH"
 ```
 
 Or build from a clone (`make build` writes `bin/kubestrata`; the `export` puts it on your `PATH`
@@ -69,16 +71,22 @@ Compare view of `kuberito-source` and `kuberito-target`:
 
 ## Commands
 
-```sh
-kubestrata contexts                       # kubeconfig contexts (available)
-kubestrata collect -c source -c target    # read-only snapshot into the local cache (available)
-kubestrata cache ls                       # cached snapshots (available)
-kubestrata render -c source --open        # radial view, offline HTML (available)
-kubestrata compare -c source -c target    # equal / drift / pending / new and coverage, side-by-side HTML (available)
-kubestrata                                # interactive TUI (planned)
-```
+| Command | Does |
+|---|---|
+| `kubestrata contexts` | kubeconfig contexts, no cluster access |
+| `kubestrata collect -c source -c target` | read-only snapshot into the local cache; `--snapshot-out <file\|dir>` also writes it as plain JSON |
+| `kubestrata cache ls` | cached snapshots, with the `STAMP` that `diff` takes |
+| `kubestrata render -c source --open` | radial view, offline HTML |
+| `kubestrata compare -c source -c target` | equal / drift / pending / new and coverage, side-by-side HTML |
+| `kubestrata diff -c source` | two snapshots of the same cluster (newest and the one before, or `--from`/`--to`): new / gone / drift / equal |
+| `kubestrata` | interactive TUI (planned) |
 
-`--format json` prints a machine-readable document with `schema_version` 1.
+`--format json` prints a machine-readable document with `schema_version` 1. `--redact` masks AWS
+account ids and EKS/AKS endpoint hosts in the output and the site; the cache keeps the real values.
+
+Ring scales (`render`/`compare --scale`, also switchable in the page): `30m` and `1h` (12 rings of
+30 minutes or 1 hour, for young clusters), `5d`, `10d`, `30d`, `log`, and custom rings with unit
+suffixes, `--rings 30m,2h,1d,7d,30d` (a bare number is days).
 
 `compare` pairs resources by `group/Kind/namespace/name`:
 

@@ -206,7 +206,8 @@ func (b *builder) namespaces(snap *snapshot.Snapshot, objs []unstructured.Unstru
 
 func (b *builder) nodes(snap *snapshot.Snapshot, objs []unstructured.Unstructured) ([]string, []string) {
 	b.nodeArch = map[string]string{}
-	ns := snapshot.NodeSummary{Count: len(objs), Arch: map[string]int{}}
+	ns := snapshot.NodeSummary{Count: len(objs), Arch: map[string]int{}, InstanceTypes: map[string]int{},
+		CapacityTypes: map[string]int{}}
 	zones := map[string]bool{}
 	kubelets := map[string]bool{}
 	labelKeys := map[string]bool{}
@@ -217,8 +218,17 @@ func (b *builder) nodes(snap *snapshot.Snapshot, objs []unstructured.Unstructure
 		if arch != "" {
 			ns.Arch[arch]++
 		}
-		if z := u.GetLabels()["topology.kubernetes.io/zone"]; z != "" {
+		labels := u.GetLabels()
+		if z := labels[labelZone]; z != "" {
 			zones[z] = true
+		}
+		if t := labels[labelInstanceType]; t != "" {
+			ns.InstanceTypes[t]++
+		} else if t := labels["beta.kubernetes.io/instance-type"]; t != "" {
+			ns.InstanceTypes[t]++
+		}
+		if c := capacityType(labels); c != "" {
+			ns.CapacityTypes[c]++
 		}
 		if v := s(path(u.Object, "status", "nodeInfo", "kubeletVersion")); v != "" {
 			kubelets[v] = true
@@ -232,6 +242,25 @@ func (b *builder) nodes(snap *snapshot.Snapshot, objs []unstructured.Unstructure
 	ns.KubeletVersion = setList(kubelets)
 	snap.Cluster.Nodes = ns
 	return providers, setList(labelKeys)
+}
+
+// capacityType is how a node was bought, from its labels: Karpenter and EKS Auto Mode
+// (on-demand, spot, reserved), EKS managed node groups (ON_DEMAND, SPOT, CAPACITY_BLOCK), GKE Spot
+// and preemptible VMs, AKS Spot pools. Lower case with dashes; "" when no label says it.
+func capacityType(l map[string]string) string {
+	v := l[labelCapacityType]
+	if v == "" {
+		v = l["eks.amazonaws.com/capacityType"]
+	}
+	switch {
+	case v != "":
+		return strings.ReplaceAll(strings.ToLower(v), "_", "-")
+	case l["cloud.google.com/gke-spot"] == "true":
+		return "spot"
+	case l["cloud.google.com/gke-preemptible"] == "true":
+		return "preemptible"
+	}
+	return strings.ToLower(l["kubernetes.azure.com/scalesetpriority"])
 }
 
 func setList(set map[string]bool) []string {

@@ -15,6 +15,14 @@ kubestrata reads clusters with `list` and `get` only and writes nothing to them.
 The cache and the generated site describe your cluster (namespaces, images, hosts). Treat them as
 you treat the cluster's inventory: do not commit or publish them.
 
+`--redact` (global flag) masks the AWS account id in ARNs and ECR registry hosts, the cluster label
+of EKS and AKS endpoint hosts, and any 12-digit run in context, cluster and user names. It applies
+to the output and error messages of `contexts`, `collect` (and its `--snapshot-out` files),
+`cache ls`, `diff`, `render` and `compare`, and to the generated site; the cache keeps the real
+values. Use it for screenshots, shared terminals and files you hand over. It does not anonymize
+namespaces, resource names, images outside ECR or labels: review a site before publishing it. Details:
+[docs/design.md](docs/design.md#redaction---redact).
+
 ## Reporting a vulnerability
 
 Use GitHub's private vulnerability reporting on this repository (**Security** → **Report a

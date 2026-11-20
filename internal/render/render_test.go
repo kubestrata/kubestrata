@@ -158,17 +158,58 @@ func TestWriteCompareRefusesBadInput(t *testing.T) {
 }
 
 func TestOptions(t *testing.T) {
-	bad := []Options{{Scale: "7d"}, {Axis: "deleted"}, {Scale: "custom"}, {Rings: []int{30, 10}}, {Mode: "diff"}}
+	bad := []Options{{Scale: "7d"}, {Axis: "deleted"}, {Scale: "custom"}, {RingMinutes: []int{30, 10}},
+		{RingMinutes: []int{60, 60}}, {Mode: "diff"}}
 	for _, o := range bad {
 		if err := o.Validate(); err == nil {
 			t.Errorf("accepted %+v", o)
 		}
 	}
-	o := Options{Rings: []int{5, 15, 30}}
+	o := Options{RingMinutes: []int{5, 15, 30}}
 	if err := o.Validate(); err != nil || o.Scale != "custom" {
 		t.Errorf("rings: scale=%s err=%v", o.Scale, err)
 	}
-	if !strings.Contains(strings.Join(Scales, ","), "log") {
-		t.Error("log scale missing")
+	for _, s := range []string{"30m", "1h", "5d", "10d", "30d", "log"} {
+		o := Options{Scale: s}
+		if err := o.Validate(); err != nil {
+			t.Errorf("scale %s: %v", s, err)
+		}
+	}
+}
+
+func TestParseRings(t *testing.T) {
+	got, err := ParseRings([]string{"30m", "2h", "1d", "7", " 30d "})
+	want := []int{30, 120, 1440, 7 * 1440, 30 * 1440}
+	if err != nil || len(got) != len(want) {
+		t.Fatalf("ParseRings = %v, %v", got, err)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("ParseRings = %v, want %v", got, want)
+		}
+	}
+	// a bare number keeps meaning days
+	if got, _ := ParseRings([]string{"5", "15", "30"}); len(got) != 3 || got[2] != 30*1440 {
+		t.Errorf("bare days: %v", got)
+	}
+	for _, bad := range [][]string{{"0"}, {"-5"}, {"1.5h"}, {"2w"}, {"h"}, {""}, {"99999999999999d"}} {
+		if _, err := ParseRings(bad); err == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+	if got, err := ParseRings(nil); got != nil || err != nil {
+		t.Errorf("no rings: %v, %v", got, err)
+	}
+}
+
+// The ring minutes reach the page config under their own key.
+func TestRingMinutesInConfig(t *testing.T) {
+	d := t.TempDir()
+	if _, err := Write(d, []*snapshot.Snapshot{fixture()}, Options{RingMinutes: []int{30, 120, 1440}}); err != nil {
+		t.Fatal(err)
+	}
+	page, _ := os.ReadFile(filepath.Join(d, "index.html"))
+	if !bytes.Contains(page, []byte(`"scale":"custom"`)) || !bytes.Contains(page, []byte(`"ring_minutes":[30,120,1440]`)) {
+		t.Error("index.html misses the custom rings in minutes")
 	}
 }

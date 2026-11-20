@@ -16,7 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/leosavio/kubestrata/internal/compare"
@@ -32,17 +32,22 @@ const (
 	fileMode = 0o600
 )
 
-// Scales the view offers.
-var Scales = []string{"5d", "10d", "30d", "log", "custom"}
+// Scales the view offers: 12 linear rings of 30 minutes, 1 hour, 5, 10 or 30 days (plus a
+// compressed outer band), the log scale and custom rings.
+var Scales = []string{"30m", "1h", "5d", "10d", "30d", "log", "custom"}
+
+// maxRingMinutes caps a custom ring at 100 years.
+const maxRingMinutes = 100 * 365 * 24 * 60
 
 // Options of a render.
 type Options struct {
-	Mode    string // single, or compare (two snapshots: source then target)
-	Scale   string
-	Axis    string
-	Rings   []int
-	Version string
-	Compare *compare.Result // compare mode: the comparison of the two snapshots
+	Mode  string // single, or compare (two snapshots: source then target)
+	Scale string
+	Axis  string
+	// RingMinutes are the custom rings in minutes, ascending; ParseRings reads them from --rings.
+	RingMinutes []int
+	Version     string
+	Compare     *compare.Result // compare mode: the comparison of the two snapshots
 }
 
 type viewConfig struct {
@@ -51,11 +56,38 @@ type viewConfig struct {
 	Clusters      []string `json:"clusters"`
 	Scale         string   `json:"scale"`
 	Axis          string   `json:"axis"`
-	Rings         []int    `json:"rings,omitempty"`
+	RingMinutes   []int    `json:"ring_minutes,omitempty"`
 	Version       string   `json:"version"`
 }
 
 var idRE = regexp.MustCompile(`^[0-9a-f]{12}$`)
+
+// ParseRings reads the --rings values: a number with the suffix m (minutes), h (hours) or d
+// (days); a bare number is days, so "5,15,30" keeps its meaning. It returns minutes.
+func ParseRings(values []string) ([]int, error) {
+	out := make([]int, 0, len(values))
+	for _, raw := range values {
+		v := strings.TrimSpace(raw)
+		unit := 24 * 60
+		switch {
+		case strings.HasSuffix(v, "m"):
+			unit, v = 1, strings.TrimSuffix(v, "m")
+		case strings.HasSuffix(v, "h"):
+			unit, v = 60, strings.TrimSuffix(v, "h")
+		case strings.HasSuffix(v, "d"):
+			v = strings.TrimSuffix(v, "d")
+		}
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 || n > maxRingMinutes/unit {
+			return nil, fmt.Errorf("--rings: %q is not a positive whole number of minutes (m), hours (h) or days (d, the default) up to 100 years", raw)
+		}
+		out = append(out, n*unit)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
 
 // Validate checks the options before anything is written.
 func (o *Options) Validate() error {
@@ -77,18 +109,18 @@ func (o *Options) Validate() error {
 		return fmt.Errorf("render: mode must be single or compare, got %q", o.Mode)
 	case !ok:
 		return fmt.Errorf("--scale must be one of %s", strings.Join(Scales, ", "))
-	case o.Scale == "custom" && len(o.Rings) == 0:
+	case o.Scale == "custom" && len(o.RingMinutes) == 0:
 		return fmt.Errorf("--scale custom needs --rings")
 	case o.Axis != "created" && o.Axis != "changed":
 		return fmt.Errorf("--axis must be created or changed")
 	}
-	if len(o.Rings) > 0 {
-		if !sort.IntsAreSorted(o.Rings) || o.Rings[0] <= 0 {
-			return fmt.Errorf("--rings must be positive days in ascending order")
+	if len(o.RingMinutes) > 0 {
+		for i, r := range o.RingMinutes {
+			if r <= 0 || r > maxRingMinutes || (i > 0 && r <= o.RingMinutes[i-1]) {
+				return fmt.Errorf("--rings must be positive and strictly ascending (e.g. 30m,2h,1d,7d or 5,15,30 in days)")
+			}
 		}
-		if o.Scale != "custom" {
-			o.Scale = "custom"
-		}
+		o.Scale = "custom"
 	}
 	return nil
 }
@@ -117,7 +149,7 @@ func Write(dir string, snaps []*snapshot.Snapshot, o Options) (string, error) {
 		}
 	}
 	cfg := viewConfig{SchemaVersion: ViewSchemaVersion, Mode: o.Mode, Scale: o.Scale, Axis: o.Axis,
-		Rings: o.Rings, Version: o.Version}
+		RingMinutes: o.RingMinutes, Version: o.Version}
 	var scripts strings.Builder
 	seen := map[string]bool{}
 	for _, s := range snaps {

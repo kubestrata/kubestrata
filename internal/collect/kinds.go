@@ -73,8 +73,9 @@ func specFor(group, resource string) (kindSpec, bool) {
 // noiseConfigMaps are created by the control plane in every namespace.
 var noiseConfigMaps = map[string]bool{"kube-root-ca.crt": true, "openshift-service-ca.crt": true}
 
-// DefaultSystemNS matches namespaces hidden by default in the view.
-const DefaultSystemNS = `^(kube-|openshift|amazon-|aws-|gke-|azure-|local-path-storage$)`
+// DefaultSystemNS matches namespaces hidden by default in the view: the Kubernetes ones by exact
+// name (kube-prometheus-stack is an application), OpenShift and the cloud providers by prefix.
+const DefaultSystemNS = `^(kube-system|kube-public|kube-node-lease|local-path-storage|openshift(-.*)?|amazon-.*|aws-.*|gke-.*|azure-.*)$`
 
 // DefaultTeamKeys are looked up, in order, in resource labels and then namespace labels and
 // annotations. openshift.io/requester (set on OpenShift projects) is the last fallback.

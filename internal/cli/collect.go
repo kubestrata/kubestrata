@@ -2,7 +2,11 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -15,6 +19,7 @@ import (
 	"github.com/leosavio/kubestrata/internal/cache"
 	"github.com/leosavio/kubestrata/internal/collect"
 	"github.com/leosavio/kubestrata/internal/kube"
+	"github.com/leosavio/kubestrata/internal/snapshot"
 )
 
 // maxParallelContexts caps how many clusters are listed at the same time.
@@ -31,7 +36,9 @@ type collectResult struct {
 	Collected time.Time `json:"collected_at,omitzero"`
 	Seconds   float64   `json:"seconds"`
 	Path      string    `json:"path,omitempty"`
-	Message   string    `json:"message,omitempty"`
+	// SnapshotOut is the plain JSON copy written by --snapshot-out.
+	SnapshotOut string `json:"snapshot_out,omitempty"`
+	Message     string `json:"message,omitempty"`
 }
 
 type collectDoc struct {
@@ -40,13 +47,14 @@ type collectDoc struct {
 }
 
 type collectFlags struct {
-	contexts []string
-	all      bool
-	maxAge   time.Duration
-	force    bool
-	crds     bool
-	systemNS string
-	teamKeys []string
+	contexts    []string
+	all         bool
+	maxAge      time.Duration
+	force       bool
+	crds        bool
+	systemNS    string
+	teamKeys    []string
+	snapshotOut string
 }
 
 func newCollectCmd(g *globals) *cobra.Command {
@@ -55,7 +63,11 @@ func newCollectCmd(g *globals) *cobra.Command {
 		Use:   "collect",
 		Short: "Collect a read-only inventory of clusters into the local cache",
 		Long: "collect lists the selected contexts with list/get calls only and writes a sanitized snapshot " +
-			"per cluster to the local cache. A snapshot newer than --max-age is reused unless --force is set.",
+			"per cluster to the local cache. A snapshot newer than --max-age is reused unless --force is set. " +
+			"--format json prints a summary per context; --snapshot-out also writes the snapshot itself as plain JSON.",
+		Example: "  kubestrata collect -c source -c target --force\n" +
+			"  kubestrata collect -c source --snapshot-out source.json\n" +
+			"  kubestrata collect --all --snapshot-out ./snapshots/   # existing directory: <cluster_id>.json each",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := g.checkFormat(); err != nil {
@@ -65,22 +77,54 @@ func newCollectCmd(g *globals) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			outDir := false
+			if f.snapshotOut != "" {
+				if fi, err := os.Stat(f.snapshotOut); err == nil && fi.IsDir() {
+					outDir = true
+				} else if len(targets) > 1 {
+					return fmt.Errorf("--snapshot-out %s: %d contexts need an existing directory (one <cluster_id>.json each)",
+						f.snapshotOut, len(targets))
+				} else if _, err := os.Stat(filepath.Dir(f.snapshotOut)); err != nil {
+					return fmt.Errorf("--snapshot-out: %w", err)
+				}
+			}
 			c, err := g.openCache()
 			if err != nil {
 				return err
 			}
 			results := runCollect(cmd.Context(), g, c, f, targets)
+			var failed, notWritten []string
+			for i := range results {
+				r := &results[i]
+				if r.Status == "failed" {
+					failed = append(failed, g.mask(r.Context))
+					continue
+				}
+				if f.snapshotOut == "" {
+					continue
+				}
+				p := f.snapshotOut
+				if outDir {
+					p = filepath.Join(f.snapshotOut, r.ClusterID+".json")
+				}
+				if err := g.writeSnapshotOut(c, r.Path, p); err != nil {
+					notWritten = append(notWritten, g.mask(r.Context)+": "+err.Error())
+					continue
+				}
+				r.SnapshotOut = p
+			}
 			if err := printCollect(cmd, g, results); err != nil {
 				return err
 			}
-			var failed []string
-			for _, r := range results {
-				if r.Status == "failed" {
-					failed = append(failed, r.Context)
-				}
-			}
+			var errs []string
 			if len(failed) > 0 {
-				return fmt.Errorf("collection failed for %s", strings.Join(failed, ", "))
+				errs = append(errs, "collection failed for "+strings.Join(failed, ", "))
+			}
+			if len(notWritten) > 0 {
+				errs = append(errs, "--snapshot-out not written for "+strings.Join(notWritten, "; "))
+			}
+			if len(errs) > 0 {
+				return errors.New(strings.Join(errs, "; "))
 			}
 			return nil
 		},
@@ -92,7 +136,46 @@ func newCollectCmd(g *globals) *cobra.Command {
 	cmd.Flags().BoolVar(&f.crds, "crds", true, "include custom resources")
 	cmd.Flags().StringVar(&f.systemNS, "system-ns", collect.DefaultSystemNS, "regexp of system namespaces (hidden by default in the view)")
 	cmd.Flags().StringSliceVar(&f.teamKeys, "team-label", collect.DefaultTeamKeys, "label/annotation keys that name the owning team, in order")
+	cmd.Flags().StringVar(&f.snapshotOut, "snapshot-out", "",
+		"also write the plain JSON snapshot to this file (one context), or into this existing directory as <cluster_id>.json")
 	return cmd
+}
+
+// writeSnapshotOut copies a cached snapshot to p as indented JSON (mode 0600, written
+// atomically), redacted under --redact.
+func (g *globals) writeSnapshotOut(c *cache.Cache, cached, p string) error {
+	s, err := c.Load(cache.Entry{Path: cached})
+	if err != nil {
+		return err
+	}
+	if g.redact {
+		red, err := g.snapshots([]*snapshot.Snapshot{s})
+		if err != nil {
+			return err
+		}
+		s = red[0]
+	}
+	raw, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(p), ".kubestrata-snapshot-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(append(raw, '\n')); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), p)
 }
 
 func runCollect(ctx context.Context, g *globals, c *cache.Cache, f *collectFlags, targets []string) []collectResult {
@@ -147,19 +230,28 @@ func collectOne(ctx context.Context, g *globals, c *cache.Cache, f *collectFlags
 
 func printCollect(cmd *cobra.Command, g *globals, results []collectResult) error {
 	out := cmd.OutOrStdout()
+	shown := make([]collectResult, len(results))
+	for i, r := range results {
+		r.Context, r.Message = g.mask(r.Context), g.mask(r.Message)
+		shown[i] = r
+	}
 	if g.format == "json" {
-		return writeJSON(out, collectDoc{SchemaVersion: SchemaVersion, Results: results})
+		return writeJSON(out, collectDoc{SchemaVersion: SchemaVersion, Results: shown})
 	}
 	t := newTable("CONTEXT", "STATUS", "CLUSTER", "DISTRO", "VERSION", "RESOURCES", "ERRORS", "TIME")
-	for _, r := range results {
+	var written []string
+	for _, r := range shown {
 		status := r.Status
 		if r.Message != "" {
 			status += ": " + truncate(r.Message, 60)
 		}
 		t.Row(r.Context, status, r.ClusterID, r.Distro, r.Version, fmt.Sprint(r.Resources), fmt.Sprint(r.Errors),
 			fmt.Sprintf("%.1fs", r.Seconds))
+		if r.SnapshotOut != "" {
+			written = append(written, "snapshot of "+r.Context+": "+r.SnapshotOut)
+		}
 	}
-	_, err := lipgloss.Fprintln(out, t.String())
+	_, err := lipgloss.Fprintln(out, strings.Join(append([]string{t.String()}, written...), "\n"))
 	return err
 }
 

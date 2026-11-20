@@ -1,7 +1,7 @@
 ---
 type: guide
 summary: "Contrato de contexto do repo kubestrata para agentes: CLI Go (MIT) que coleta inventário somente leitura de clusters Kubernetes e gera visão HTML offline por idade (centro = recente) e comparação lado a lado para migração."
-updated: 2026-11-18
+updated: 2026-11-20
 tags: [agents, kubernetes, migration, inventory]
 ---
 
@@ -16,8 +16,8 @@ tags: [agents, kubernetes, migration, inventory]
 
 ## O que é
 
-CLI em Go, MIT, repo `leosavio/kubestrata` (**privado** até a v0.1.0 funcional com docs no padrão
-de comunidade; depois público). Lê os contextos do kubeconfig, coleta inventário somente leitura e
+CLI em Go, MIT, repo `leosavio/kubestrata` (público desde 2026-11-20, ainda pré-release, para a
+validação no workshop AWS). Lê os contextos do kubeconfig, coleta inventário somente leitura e
 sanitizado para um cache local e gera site HTML offline: recursos recentes no centro, antigos na
 borda, setor por namespace/time, e comparação lado a lado de dois clusters para planejar migração.
 Ferramenta de domínio com repo próprio, como o `costgate`.
@@ -41,7 +41,29 @@ Design completo: `docs/design.md`.
 
 ## Estado atual (onde parei)
 
-> Última atualização: 2026-11-18
+> Última atualização: 2026-11-20
+
+Sessão 2026-11-20 (workflow `wf_fd5a30f0a91e7204`, lane 1, mudanças sem commit para revisão do
+orquestrador): achados da avaliação no workshop AWS (EKS Auto Mode + Spark + Terraform,
+relatório de avaliação K1–K8 no repo privado de notas do workshop). Escalas `30m`
+e `1h` (página e `--scale`), rótulos e idades abaixo de um dia em minutos/horas, `--rings` com
+sufixos `m`/`h`/`d` (config da página: `ring_minutes`), `data-rings` no `<body>` conferido pelo
+`make page-check` (20 páginas). K6: padrão de sistema por nome exato (`kube-prometheus-stack` deixa
+de ser sistema). K3: managers `terraform` (`HashiCorp`, `Terraform`, `terraform-provider-*`) e
+`platform` (`eks*`, `kubeadm`, `cluster-version-operator`, control plane quando único escritor);
+empate no mesmo segundo vai para quem não é plataforma; `manager` e `field_managers` fora do `fp`
+(teste). K8: `collect --snapshot-out <arquivo|dir>`. K5: `--redact` global (pacote
+`internal/redact`; cache intacto; erros de todo comando mascarados em `NewRoot`). K1: `kubestrata diff` (CLI/JSON, `compare.CompareTimeline`,
+estados new/gone/drift/equal; sem site porque `data/<cluster_id>.js` colide) e coluna `STAMP` no
+`cache ls`. K2: fixture SparkApplication → driver → executores confirma a agregação sem mudar
+código; confirmado também no cluster EKS do workshop (Lab 3: SparkApplication com `pods` 5,
+`ready` 5, `archs` `[arm64]` durante o job e `pods` 1 depois). K4: fatos de
+NodeClaim/NodePool/NodeClass/EC2NodeClass (labels e spec) e contagem de instance/capacity type no
+resumo de nodes. No lab: `make lab-test` verde, `diff` entre duas coletas seguidas = 0 mudanças.
+Passada de correção da revisão: `--redact` mascara também a mensagem de erro de todo comando
+(`maskErrors` em `NewRoot`), regex de endpoint exige dois labels antes de `eks.amazonaws.com` /
+`azmk8s.io`, e o início rápido do README põe `$(go env GOPATH)/bin` no `PATH` (achado D32 do
+workshop). Snapshots têm granularidade de segundo: duas coletas no mesmo segundo gravam um só.
 
 Sessão 2026-11-18 (workflow `wf_6f330db99bdf414e`, mudanças sem commit para revisão do
 orquestrador): `compare` pronto. `internal/compare` classifica por id (`equal`/`drift`/`pending`/
@@ -79,9 +101,12 @@ verdade-base do lab: 0 divergência, 0 vazamento.
 - [x] F1: `render` (site radial, escalas 5d/10d/30d/log/custom, eixo criado/alterado, filtros, busca, painel, cor por categoria/manager/time)
 - [x] F1: `compare` (identidade, fingerprint, drift com fatos, tabela de cobertura, site lado a lado; e2e no lab)
 - [x] CI: `.github/workflows/ci.yml` (lint + test -race); primeira execução verde em 2026-11-18 (run 44340222456, `04f7c74`)
+- [x] Achados do workshop AWS: escalas 30m/1h, K1 `diff` (CLI/JSON), K2 verificado (fixture + workshop), K3, K4, K5 `--redact`, K6, K8 `--snapshot-out`
+- [ ] K1: site do `diff` (exige mudar a chave dos arquivos `data/<cluster_id>.js`); K7 custo por recurso a partir de export do Kubecost/OpenCost (fora desta rodada)
 - [ ] F1: TUI básica; teste de não vazamento sobre o site; golden de render
 - [ ] F2: parear tradução de kind (Route/Ingress → HTTPRoute) e PVs de nome gerado nas unidades de migração
-- [ ] v0.1.0: CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, release; depois tornar o repo público
+- [x] CONTRIBUTING, CODE_OF_CONDUCT, SECURITY e CHANGELOG (`e8c436f`); repo público desde 2026-11-20
+- [ ] v0.1.0: release
 
 ## Comandos essenciais
 
@@ -92,8 +117,10 @@ make smoke        # binário contra o kubeconfig local (sem acessar cluster)
 make lab-test     # e2e contra o lab kuberito rodando (pula se não houver lab)
 make page-check   # render + compare do cache, Chrome headless em vários estados de hash; falha sem data-status="ok"
                   # (KUBESTRATA_CACHE_DIR; PAGE_CHECK_SOURCE/PAGE_CHECK_TARGET, padrão kuberito-source/kuberito-target)
-bin/kubestrata render -c <ctx> --open   # site offline a partir do cache
+bin/kubestrata render -c <ctx> --open   # site offline a partir do cache (--scale 30m|1h|5d|10d|30d|log, --rings 30m,2h,1d)
 bin/kubestrata compare -c <origem> -c <destino> --open   # tabela de cobertura + site lado a lado
+bin/kubestrata diff -c <ctx> [--from <stamp>] [--to <stamp>]   # dois snapshots do mesmo cluster (stamps: cache ls)
+bin/kubestrata collect -c <ctx> --snapshot-out snap.json --redact   # snapshot em JSON puro, mascarado para compartilhar
 KUBESTRATA_CACHE_DIR=/tmp/ks bin/kubestrata collect -c <ctx> --force   # coleta real, cache isolado
 ```
 

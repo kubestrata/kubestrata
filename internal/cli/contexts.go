@@ -28,6 +28,11 @@ func newContextsCmd(g *globals) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			current = g.mask(current)
+			for i := range ctxs {
+				c := &ctxs[i]
+				c.Name, c.Cluster, c.User, c.Server = g.mask(c.Name), g.mask(c.Cluster), g.mask(c.User), g.mask(c.Server)
+			}
 			out := cmd.OutOrStdout()
 			if g.format == "json" {
 				return writeJSON(out, contextsDoc{SchemaVersion: SchemaVersion, Current: current, Contexts: ctxs})

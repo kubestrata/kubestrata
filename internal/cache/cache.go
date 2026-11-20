@@ -36,9 +36,26 @@ type Entry struct {
 	Distro      string    `json:"distro,omitempty"`
 	Version     string    `json:"version,omitempty"`
 	CollectedAt time.Time `json:"collected_at"`
-	Path        string    `json:"path"`
-	Resources   int       `json:"resources"`
-	Errors      int       `json:"errors"`
+	// Stamp names the snapshot file (20261120T144809Z); `kubestrata diff --from/--to` takes it.
+	Stamp     string `json:"stamp"`
+	Path      string `json:"path"`
+	Resources int    `json:"resources"`
+	Errors    int    `json:"errors"`
+}
+
+// Stamp formats a collection time the way snapshot files are named.
+func Stamp(t time.Time) string { return t.UTC().Format(stampFmt) }
+
+// ParseStamp reads a stamp (20261120T144809Z) or an RFC 3339 time.
+func ParseStamp(s string) (time.Time, error) {
+	if t, err := time.Parse(stampFmt, s); err == nil {
+		return t, nil
+	}
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%q is neither a stamp like 20261120T144809Z nor an RFC 3339 time", s)
+	}
+	return t.UTC(), nil
 }
 
 type index struct {
@@ -78,12 +95,13 @@ func (c *Cache) Put(s *snapshot.Snapshot) (Entry, error) {
 	if err := os.MkdirAll(cdir, dirMode); err != nil {
 		return Entry{}, err
 	}
-	p := filepath.Join(cdir, s.CollectedAt.UTC().Format(stampFmt)+".json.gz")
+	stamp := Stamp(s.CollectedAt)
+	p := filepath.Join(cdir, stamp+".json.gz")
 	if err := writeAtomic(p, func(f *os.File) error { return snapshot.WriteGzip(f, s) }); err != nil {
 		return Entry{}, err
 	}
 	e := Entry{ClusterID: s.Cluster.ID, Context: s.Cluster.Context, Distro: s.Cluster.Distro,
-		Version: s.Cluster.Version, CollectedAt: s.CollectedAt, Path: p,
+		Version: s.Cluster.Version, CollectedAt: s.CollectedAt, Stamp: stamp, Path: p,
 		Resources: len(s.Resources), Errors: len(s.Errors)}
 	idx, err := c.readIndex()
 	if err != nil {
@@ -104,8 +122,26 @@ func (c *Cache) Latest(context string) (Entry, bool, error) {
 		if _, err := os.Stat(e.Path); err != nil {
 			return Entry{}, false, nil
 		}
+		if e.Stamp == "" {
+			e.Stamp = Stamp(e.CollectedAt) // index written before stamps were recorded
+		}
 	}
 	return e, ok, nil
+}
+
+// History returns the cached snapshots of one cluster, newest first.
+func (c *Cache) History(clusterID string) ([]Entry, error) {
+	all, err := c.List()
+	if err != nil {
+		return nil, err
+	}
+	var out []Entry
+	for _, e := range all {
+		if e.ClusterID == clusterID {
+			out = append(out, e)
+		}
+	}
+	return out, nil
 }
 
 // Load reads a cached snapshot.
@@ -146,11 +182,12 @@ func (c *Cache) List() ([]Entry, error) {
 			if !strings.HasSuffix(name, ".json.gz") {
 				continue
 			}
-			t, err := time.Parse(stampFmt, strings.TrimSuffix(name, ".json.gz"))
+			stamp := strings.TrimSuffix(name, ".json.gz")
+			t, err := time.Parse(stampFmt, stamp)
 			if err != nil {
 				continue
 			}
-			out = append(out, Entry{ClusterID: d.Name(), Context: ctxOf[d.Name()], CollectedAt: t,
+			out = append(out, Entry{ClusterID: d.Name(), Context: ctxOf[d.Name()], CollectedAt: t, Stamp: stamp,
 				Path: filepath.Join(c.Dir, "clusters", d.Name(), name)})
 		}
 	}

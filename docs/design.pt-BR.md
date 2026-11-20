@@ -51,9 +51,13 @@ Workload → PVC / Secret / ConfigMap / ServiceAccount) aparecem só no hover ou
 | Comparação | o mesmo objeto cai em lugares diferentes | setores calculados sobre A∪B: mesmo namespace, mesmo ângulo nos dois lados |
 | Determinismo | depende da simulação | mesma entrada, mesma imagem |
 
-As escalas de anéis trocam no navegador sem regenerar: `5d`, `10d`, `30d` (12 anéis lineares mais
-uma faixa externa comprimida), `log` (7d / 30d / 90d / 1a+, saturando em 3 anos) e custom
-`--rings 5,15,30,90,180,365`.
+As escalas de anéis trocam no navegador sem regenerar: `30m`, `1h`, `5d`, `10d`, `30d` (12 anéis
+lineares, 30 min → 6 h, 1 h → 12 h, 5 d → 60 d e assim por diante, mais uma faixa externa
+comprimida até 3 anos), `log` (7d / 30d / 90d / 1a+, saturando em 3 anos) e anéis custom
+(`--rings 30m,2h,1d,7d,30d`; os sufixos são `m`, `h` e `d`, e número sem sufixo é dia, então
+`--rings 5,15,30,90,180,365` mantém o significado). As escalas de horas servem para cluster novo:
+um cluster criado ontem põe tudo dentro do primeiro anel de 5 dias. Rótulos de anel e idades abaixo
+de um dia aparecem em minutos e horas (`30m`, `1h30m`, "42 minutes", "3 hours").
 
 ## Coleta
 
@@ -65,6 +69,10 @@ uma faixa externa comprimida), `log` (7d / 30d / 90d / 1a+, saturando em 3 anos)
 - Discovery (`ServerPreferredResources`): kinds servidos, CRDs e tipos do OpenShift sem lista fixa
   no código. A distro sai dos grupos de API, da URL, da versão e dos labels de node, e os sinais
   usados ficam em `distro_signals` (um OpenShift simulado com CRDs no kind aparece como tal).
+- Nodes não são itens do inventário: o cluster ganha um resumo de nodes (quantidade,
+  arquiteturas, zonas, versões do kubelet e contagem por tipo de instância e por capacity type,
+  tiradas dos labels `node.kubernetes.io/instance-type`, `karpenter.sh/capacity-type`,
+  `eks.amazonaws.com/capacityType` e dos labels de Spot/preemptible do GKE e de Spot do AKS).
 - Carga no API server: só `list`/`get`, paginação `limit=500`, QPS/burst explícitos, no máximo 4
   contextos e 8 kinds em paralelo por contexto.
 - RBAC: um `403` num kind vai para `errors[]` e a coleta continua. Listar Secrets dá acesso de
@@ -91,6 +99,29 @@ O snapshot guarda uma projeção curada, nunca o objeto bruto.
 Um teste semeia valores conhecidos em Secrets, env, args, command, annotations, Route e CR, e falha
 se qualquer um deles aparecer em qualquer byte do snapshot.
 
+### Mascaramento (`--redact`)
+
+A sanitização deixa segredos fora do cache. O que sobra ainda identifica a conta: no EKS, o
+contexto e o usuário costumam ser o ARN do cluster, com o ID de 12 dígitos da conta AWS, e o host
+do endpoint é único do cluster. A flag global `--redact` mascara esses valores no que o kubestrata
+imprime e grava para compartilhar, e deixa o cache como está:
+
+| Mascarado | Exemplo |
+|---|---|
+| ID da conta num ARN | `arn:aws:eks:us-west-2:redacted:cluster/prod` |
+| ID da conta no host de um registry ECR | `redacted.dkr.ecr.us-west-2.amazonaws.com/app:1.2` |
+| primeiro label de um endpoint EKS ou AKS | `redacted.gr7.us-west-2.eks.amazonaws.com`, `redacted.hcp.eastus.azmk8s.io` |
+| qualquer sequência de exatamente 12 dígitos num nome de contexto, cluster ou usuário | `redacted_AdministratorAccess` |
+
+Vale para o `contexts` (texto e JSON), a saída do `collect` e os arquivos do `--snapshot-out`, o
+`cache ls`, o `diff` e a saída e o site do `render` e do `compare` (toda string dos snapshots e da
+comparação, mensagens de erro incluídas). O erro de qualquer comando, impresso no stderr, passa pela
+mesma máscara, porque costuma citar o contexto. O `compare` e o `diff` pareiam os snapshots reais
+primeiro e mascaram o resultado, então os estados não mudam. Os ids de cluster são hashes e ficam
+como estão. Endpoint é um host com pelo menos dois labels entre o label do cluster e
+`eks.amazonaws.com` ou `azmk8s.io`, então grupos de API como `metrics.eks.amazonaws.com` não são
+mascarados.
+
 ## Kinds e categorias padrão
 
 | Categoria | Kinds | Observação |
@@ -100,8 +131,45 @@ se qualquer um deles aparecer em qualquer byte do snapshot.
 | config | ConfigMap (sem `kube-root-ca.crt`, `openshift-service-ca.crt`), Secret, ServiceAccount (sem o `default`, salvo com identidade de nuvem ou pull secret) | Secrets `helm.sh/release.v1` agrupados como estado do Helm |
 | storage | PVC, PV, StorageClass, VolumeSnapshot | kinds de escopo de cluster ganham setor próprio |
 | policy | HPA, PDB, ResourceQuota, LimitRange, Role, RoleBinding | PDB afeta drain e cutover |
-| CRDs | recursos customizados | agrupados por API group |
-| sistema | namespaces que casam com `^(kube-|openshift|amazon-|aws-|gke-|azure-|local-path-storage$)` | escondidos por padrão (`--system-ns`) |
+| CRDs | recursos customizados | agrupados por API group; os kinds do Karpenter e do EKS Auto Mode ganham fatos próprios (abaixo) |
+| sistema | namespaces que casam com `^(kube-system\|kube-public\|kube-node-lease\|local-path-storage\|openshift(-.*)?\|amazon-.*\|aws-.*\|gke-.*\|azure-.*)$` | escondidos por padrão (`collect --system-ns`); os do Kubernetes por nome exato, então `kube-prometheus-stack` é aplicação |
+
+A marca de sistema é gravada na coleta: snapshots do cache anteriores a uma mudança do padrão
+mantêm as marcas até o próximo `collect`.
+
+Os fatos do Karpenter e do EKS Auto Mode vêm de labels e do spec, nunca do status (o nome do node
+da NodeClaim é o único valor de status lido, e é volátil):
+
+| Kind | Fatos |
+|---|---|
+| NodeClaim `karpenter.sh` | `instance_type`, `capacity_type`, `zone`, `nodepool` (labels, ou requisito `In` de valor único), `node_class`, `node` |
+| NodePool `karpenter.sh` | `requirements` (`key Op v1,v2`), `limits` (`cpu=1000`), `weight`, `node_class`, `expire_after`, `consolidation_policy`, `consolidate_after`, `disruption_budgets` |
+| NodeClass `eks.amazonaws.com` | `ephemeral_storage` (`size`, `iops`, `throughput`) |
+| EC2NodeClass `karpenter.k8s.aws` | `block_devices` (`device`, `type`, `size`, `iops`, `throughput`) |
+
+## Managers
+
+O `manager` diz como o objeto chegou ao cluster, o que define o caminho de migração. Labels e
+annotations explícitas vencem (Argo CD, Flux, Helm), depois a posse por um recurso customizado
+(operator), depois o field manager da entrada de `managedFields` mais antiga fora de status. Os
+managers do control plane (`kube-controller-manager`, `kube-apiserver`, `kubelet`,
+`kube-scheduler`, `cloud-controller-manager`) só contam como criador quando nenhum outro manager
+escreveu no objeto; no mesmo segundo, um manager que não é da plataforma vence um da plataforma (o
+EKS Auto Mode grava defaults nos NodePools que o Terraform cria).
+
+| Manager | Origem | Dica de migração na página |
+|---|---|---|
+| argocd, flux | labels e annotations; field managers que contêm `argocd`, `kustomize-controller`, `helm-controller` | GitOps: re-target the destination |
+| helm | labels, annotations, Secrets de release do Helm | reinstall the release in the target |
+| terraform | field managers `HashiCorp` (providers kubernetes e kubectl), `Terraform` (server-side apply), `terraform-provider-*` | IaC: re-target the Terraform code to the new cluster |
+| operator | o dono controlador é um recurso customizado | migrate the custom resource, not its children |
+| kubectl | `kubectl*` | applied by hand: export, clean, move to Git |
+| platform | `eks`, `eks-auto-mode`, `eks-internal`, `kubeadm`, `cluster-version-operator` e os managers do control plane acima quando são os únicos que escreveram | recreated by the target platform, do not migrate (num PV ou PVC: o objeto é recriado, mova os dados) |
+| other | qualquer outro field manager (listado em `facts.field_managers`) | unknown tool: check managedFields |
+| unknown | sem `managedFields` | no manager data |
+
+Nem o `manager` (campo do recurso) nem o `field_managers` (fato volátil) entram no fingerprint,
+então uma troca só de ferramenta não é drift.
 
 ## Contrato do snapshot (`schema_version: 1`)
 
@@ -112,7 +180,8 @@ se qualquer um deles aparecer em qualquer byte do snapshot.
   "collected_at": "2026-11-17T12:12:00Z",
   "cluster": {"id": "3f9a1c0b7e21", "context": "source", "server_host": "api.example:6443",
               "distro": "openshift", "distro_signals": ["group route.openshift.io"], "version": "v1.27.x",
-              "nodes": {"count": 12, "arch": {"amd64": 12}, "zones": ["a", "b"]}},
+              "nodes": {"count": 12, "arch": {"amd64": 12}, "instance_types": {"m6a.large": 12},
+                        "capacity_types": {"on-demand": 10, "spot": 2}, "zones": ["a", "b"]}},
   "namespaces": [{"name": "payments", "team": "team-payments", "created": "2024-06-01T00:00:00Z"}],
   "resources": [{
     "id": "apps/Deployment/payments/api", "cat": "workload", "ns": "payments", "name": "api",
@@ -148,7 +217,10 @@ documento.
 
 Pods, ReplicaSets, ReplicationControllers e Jobs são agregados no dono exibido mais próximo
 (`pods`, `ready`, `restarts`, `pod_newest`, `pod_oldest`, `archs`, `last_rollout`, `jobs`,
-`last_run`). Sem dono, aparecem com `facts.orphan`.
+`last_run`). A cadeia de donos é percorrida até o primeiro objeto exibido, então um recurso
+customizado também ganha os fatos: uma SparkApplication é dona do pod do driver, o driver é dono
+dos pods dos executores, e todos contam na SparkApplication. Sem dono, aparecem com
+`facts.orphan`.
 
 ## Comparação
 
@@ -169,8 +241,9 @@ inglês na CLI, no JSON e na página):
 | new (novo) | só no destino | `#42a5f5` |
 
 O fingerprint é um hash do kind e dos fatos projetados, **menos um conjunto volátil** (contagem de
-pods, prontidão, restarts, horários de pod e de rollout, execuções de Job, arquiteturas, field
-managers, referências ausentes, revisão e status do Helm, marcas de órfão). Um hash do spec inteiro
+pods, prontidão, restarts, horários de pod e de rollout, execuções de Job, arquiteturas, fases,
+nomes de node e de volume, field managers, referências ausentes, revisão e status do Helm, marcas
+de órfão). Um hash do spec inteiro
 acusaria diferenças de default entre versões do Kubernetes; a projeção por kind decide o que conta:
 
 | Kind | Fatos no fingerprint (principais) |
@@ -182,6 +255,7 @@ acusaria diferenças de default entre versões do Kubernetes; a projeção por k
 | ConfigMap | nomes de chave + hash do conteúdo |
 | Secret | tipo + número de chaves |
 | ServiceAccount | tipo de identidade de nuvem (`aws-irsa`, ...), número de image pull secrets |
+| NodeClaim, NodePool, NodeClass, EC2NodeClass | os fatos do Karpenter e do Auto Mode acima, todos de labels e spec |
 
 Referências de volume, envFrom e Secret/ConfigMap são arestas, não fatos: não entram no
 fingerprint.
@@ -220,6 +294,31 @@ identidade uma vez nos dois painéis; as contagens por estado seguem os filtros 
 sistema, namespace), e a cobertura é o total de todos os namespaces fora os de sistema, o mesmo
 total da CLI.
 
+## Diff no tempo
+
+`kubestrata diff -c <contexto> [--from <stamp>] [--to <stamp>]` compara dois snapshots do cache do
+cluster por trás de um contexto, por padrão o mais novo e o anterior a ele. Reaproveita o
+`internal/compare` e o documento da comparação (`schema_version` 1, `"mode": "diff"`): `source` é o
+snapshot mais antigo (`--from`), `target` o mais novo (`--to`), e os estados (em inglês na CLI e no
+JSON) são:
+
+| Estado | Significado |
+|---|---|
+| equal | nos dois snapshots, mesmo fingerprint |
+| drift | nos dois, fingerprint diferente; o `diff[]` lista os fatos que mudaram |
+| gone (sumiu) | só no snapshot mais antigo |
+| new (novo) | só no snapshot mais novo |
+
+Os resumos por namespace contam `equal`, `drift`, `gone` e `new` (sem cobertura); os totais deixam
+de fora os namespaces de sistema, como no `compare`. A saída em texto lista os namespaces com
+mudança, depois uma linha por recurso que mudou com os fatos no formato `fato: antigo → novo`, e
+cita os namespaces de sistema que mudaram. Os stamps são os nomes dos arquivos de snapshot que a
+coluna `STAMP` do `kubestrata cache ls` mostra (`20261120T144809Z`); horários RFC 3339 também
+servem. Usos: o que um autoscaler ou um job criou entre dois momentos (NodeClaims vêm e vão em
+minutos), o que mudou num workload (imagem, réplicas, requests) e prova de limpeza (nenhum `new` ou
+`gone` depois de um teste). Ainda não há site para o `diff`: os arquivos de dados são indexados
+pelo id do cluster (`data/<cluster_id>.js`), e os dois snapshots têm o mesmo.
+
 ## CLI e TUI
 
 Fang v2 sobre Cobra nos comandos; Bubble Tea v2, Bubbles v2, Lip Gloss v2 e Huh na TUI.
@@ -229,19 +328,24 @@ Fang v2 sobre Cobra nos comandos; Bubble Tea v2, Bubbles v2, Lip Gloss v2 e Huh 
 |---|---|
 | `kubestrata` | TUI: contextos, idade do cache, status; `r` refresh, `g` gerar, `c` comparar, `o` abrir |
 | `kubestrata contexts` | contextos do kubeconfig (sem acessar cluster) |
-| `kubestrata collect [-c ctx]... [--all] [--max-age 6h] [--force]` | grava no cache; reaproveita snapshot mais novo que `--max-age` |
-| `kubestrata render [-c ctx] [--scale 5d\|10d\|30d\|log] [--axis created\|changed] [-o dir] [--open]` | site a partir do cache |
-| `kubestrata compare -c source -c target [--scale ...] [--axis ...] [-o dir] [--open]` | tabela de cobertura no stdout e site lado a lado a partir do cache |
-| `kubestrata cache ls\|prune [--keep 5]` | manutenção dos snapshots |
+| `kubestrata collect [-c ctx]... [--all] [--max-age 6h] [--force] [--snapshot-out arquivo\|dir]` | grava no cache; reaproveita snapshot mais novo que `--max-age`; `--format json` imprime um resumo por contexto, `--snapshot-out` também grava o snapshot em JSON puro (`0600`): num arquivo para um contexto, como `<cluster_id>.json` num diretório existente para vários |
+| `kubestrata render [-c ctx] [--scale 30m\|1h\|5d\|10d\|30d\|log] [--rings 30m,2h,1d] [--axis created\|changed] [-o dir] [--open]` | site a partir do cache |
+| `kubestrata compare -c source -c target [--scale ...] [--rings ...] [--axis ...] [-o dir] [--open]` | tabela de cobertura no stdout e site lado a lado a partir do cache |
+| `kubestrata diff -c ctx [--from stamp] [--to stamp]` | dois snapshots de um cluster: new / gone / drift / equal (CLI e JSON) |
+| `kubestrata cache ls\|prune [--keep 5]` | manutenção dos snapshots; o `ls` mostra o `STAMP` que o `diff` recebe |
+
+`--redact` (global) mascara IDs de conta e hosts de endpoint em toda saída (ver Mascaramento).
 
 O estado da página fica no hash da URL
 (`#scale=log&axis=changed&color=manager&ns=<namespace>&sel=<id>`), então uma visão pode virar
 favorito e ser conferida em modo headless; o `ns=` também funciona na visão de um cluster. Uma
 Content-Security-Policy (`default-src 'none'`) mantém a página fora da rede. Depois do primeiro
-desenho a página grava `data-status`, `data-shown` (recursos desenhados, somados nos painéis),
-`data-draw-ms` e `data-total-ms` no `<body>` para checagem automatizada. O `make page-check` grava
-os dois sites a partir do cache, carrega as páginas no Chrome headless em vários estados de hash e
-falha se alguma página não informar `data-status="ok"`. Medido no Chrome headless num M4: 20 000
+desenho a página grava `data-status`, `data-rings` (rótulos dos anéis do primeiro painel),
+`data-shown` (recursos desenhados, somados nos painéis), `data-draw-ms` e `data-total-ms` no
+`<body>` para checagem automatizada. O `make page-check` grava os dois sites (e um render com anéis
+custom) a partir do cache, carrega as páginas no Chrome headless em vários estados de hash,
+inclusive as escalas `30m` e `1h`, e falha se alguma página não informar `data-status="ok"` e,
+onde confere, os rótulos de anel esperados. Medido no Chrome headless num M4: 20 000
 recursos desenham em cerca de 10–16 ms (primeiro desenho em cerca de 50 ms, arquivo de dados de
 4,8 MB).
 
@@ -257,4 +361,4 @@ em `file://`), `json/<cluster_id>.json` para máquina; o `compare` acrescenta `d
 |---|---|---|
 | F1 (v0.1.0) | contexts, collect + cache, render, compare, TUI básica, saída JSON | e2e verde em dois clusters locais; HTML golden idêntico entre execuções; teste de não vazamento verde; página sem erro de JS no Chrome headless; 20k nós com pan e zoom medidos |
 | F2 | unidades de migração, classificação (manager, estado, exposição, acoplamento à nuvem, fim de vida), `plan --format json\|csv\|md`, resumo por time, `--map-ns` | plano do fixture bate com uma verdade-base fixa |
-| F3 | diff temporal entre snapshots, checagem de imagem multi-arch, `kubectl strata` via Krew | decidido quando a F2 estiver em uso real |
+| F3 | site do diff temporal (o `diff` já existe na CLI e no JSON), checagem de imagem multi-arch, `kubectl strata` via Krew | decidido quando a F2 estiver em uso real |

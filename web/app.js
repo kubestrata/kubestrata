@@ -26,13 +26,22 @@
   var CATS = ["workload", "network", "config", "storage", "policy", "crd"];
   var CAT_COLOR = { workload: "#4fc3f7", network: "#ba68c8", config: "#ffd54f", storage: "#81c784",
     policy: "#ff8a65", crd: "#90a4ae" };
-  var MGR = ["argocd", "flux", "helm", "operator", "kubectl", "other", "unknown"];
-  var MGR_COLOR = { argocd: "#ff9800", flux: "#5c6bc0", helm: "#26a69a", operator: "#ab47bc",
-    kubectl: "#ef5350", other: "#9e9e9e", unknown: "#616161" };
+  var MGR = ["argocd", "flux", "helm", "terraform", "operator", "kubectl", "platform", "other", "unknown"];
+  var MGR_COLOR = { argocd: "#ff9800", flux: "#5c6bc0", helm: "#26a69a", terraform: "#c0ca33", operator: "#ab47bc",
+    kubectl: "#ef5350", platform: "#8d6e63", other: "#9e9e9e", unknown: "#616161" };
   var MGR_HINT = { argocd: "GitOps: re-target the destination", flux: "GitOps: re-target the destination",
-    helm: "reinstall the release in the target", operator: "migrate the custom resource, not its children",
-    kubectl: "applied by hand: export, clean, move to Git", other: "unknown tool: check managedFields",
-    unknown: "no manager data" };
+    helm: "reinstall the release in the target", terraform: "IaC: re-target the Terraform code to the new cluster",
+    operator: "migrate the custom resource, not its children",
+    kubectl: "applied by hand: export, clean, move to Git",
+    platform: "created by the cluster platform: recreated by the target platform, do not migrate",
+    other: "unknown tool: check managedFields", unknown: "no manager data" };
+  // a volume the platform provisioned holds data: the target recreates the object, the data must move
+  function mgrHint(r) {
+    if (r.manager === "platform" && (r.kind === "PersistentVolume" || r.kind === "PersistentVolumeClaim")) {
+      return "provisioned by the cluster platform: the target recreates the object, move the data";
+    }
+    return MGR_HINT[r.manager] || "";
+  }
   var STATES = ["equal", "drift", "pending", "new"];
   var STATE_COLOR = { equal: "#66bb6a", drift: "#ffb300", pending: "#ef5350", "new": "#42a5f5" };
   var STATE_HINT = { equal: "in both, same fingerprint", drift: "in both, the fingerprint differs",
@@ -88,17 +97,38 @@
     for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
     return h / 4294967296;
   }
+  // ages are in days; below one day they read in minutes and hours
   function ageText(d) {
-    if (d < 1) return "today";
+    var min = d * 1440;
+    if (min < 1) return "under a minute";
+    if (min < 2) return "1 minute";
+    if (min < 60) return Math.floor(min) + " minutes";
+    if (min < 120) return "1 hour";
+    if (d < 1) return Math.floor(min / 60) + " hours";
     if (d < 2) return "1 day";
     if (d < 60) return Math.floor(d) + " days";
     if (d < 730) return Math.round(d / 30.4) + " months";
     return (d / 365).toFixed(1) + " years";
   }
-  function dayLabel(d) { return d >= 365 && d % 365 === 0 ? (d / 365) + "y" : d + "d"; }
+  // ring label of an age in days: 30m, 1h30m, 6h, 36h, 5d, 1y
+  function ringLabel(d) {
+    var min = Math.round(d * 1440);
+    if (min < 60) return min + "m";
+    if (min % 1440) return Math.floor(min / 60) + "h" + (min % 60 ? (min % 60) + "m" : "");
+    var days = min / 1440;
+    return days >= 365 && days % 365 === 0 ? (days / 365) + "y" : days + "d";
+  }
   function pct(c) { return c === null || c === undefined ? "—" : Math.round(c * 100) + "%"; }
+  // {"c6a.xlarge": 3, "m6a.large": 1} → "c6a.xlarge: 3, m6a.large: 1"
+  function counts(o) { return Object.keys(o).sort().map(function (k) { return k + ": " + o[k]; }).join(", "); }
 
   // ---- ring scales: rr(age) in [RR_MIN, 1]; the band past the last ring is compressed (log)
+  var SCALES = ["30m", "1h", "5d", "10d", "30d", "log"];
+  // ring step of a linear scale ("30m", "1h", "5d") in days; 0 when the name is not one
+  function stepOf(name) {
+    var p = /^(\d+)([mhd])$/.exec(name || "");
+    return p ? parseInt(p[1], 10) * { m: 1, h: 60, d: 1440 }[p[2]] / 1440 : 0;
+  }
   function scaleOf(name) {
     var rings;
     if (name === "log") {
@@ -110,10 +140,10 @@
         }
       };
     }
-    if (name === "custom" && CFG.rings && CFG.rings.length) {
-      rings = CFG.rings.slice();
+    if (name === "custom" && CFG.ring_minutes && CFG.ring_minutes.length) {
+      rings = CFG.ring_minutes.map(function (m) { return m / 1440; });
     } else {
-      var step = parseInt(name, 10) || 30;
+      var step = stepOf(name) || 30;
       rings = [];
       for (var i = 1; i <= 12; i++) rings.push(step * i);
     }
@@ -330,7 +360,7 @@
       ctx.strokeStyle = "rgba(79,195,247,0.16)"; ctx.lineWidth = 1 / k;
       ctx.setLineDash([4 / k, 5 / k]); ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.2832); ctx.stroke(); ctx.setLineDash([]);
       if (i % every === every - 1 || i === rings.length - 1) {
-        ctx.fillStyle = "rgba(139,143,153,0.9)"; ctx.fillText(dayLabel(d), 3 / k, -r - 2 / k);
+        ctx.fillStyle = "rgba(139,143,153,0.9)"; ctx.fillText(ringLabel(d), 3 / k, -r - 2 / k);
       }
     });
     ctx.strokeStyle = "#232a35"; ctx.lineWidth = 1 / k;
@@ -520,8 +550,9 @@
       row(t, "cluster id", c.id);
       row(t, "collected", s.collected_at);
       var arch = (c.nodes && c.nodes.arch) || {};
-      row(t, "nodes", (c.nodes && c.nodes.count || 0) + (Object.keys(arch).length ? " (" +
-        Object.keys(arch).sort().map(function (a) { return a + ": " + arch[a]; }).join(", ") + ")" : ""));
+      row(t, "nodes", (c.nodes && c.nodes.count || 0) + (Object.keys(arch).length ? " (" + counts(arch) + ")" : ""));
+      if (c.nodes && c.nodes.instance_types) row(t, "instance types", counts(c.nodes.instance_types));
+      if (c.nodes && c.nodes.capacity_types) row(t, "capacity types", counts(c.nodes.capacity_types));
       if (c.distro_signals && c.distro_signals.length) row(t, "distro signals", c.distro_signals);
       row(t, "resources", s.resources.length);
       row(t, "edges", (s.edges || []).length);
@@ -541,7 +572,7 @@
     var t2 = el("table");
     row(t2, "namespace", r.ns || "(cluster-scoped)");
     row(t2, "team", n.team || "—");
-    row(t2, "manager", r.manager + " — " + (MGR_HINT[r.manager] || ""));
+    row(t2, "manager", r.manager + " — " + mgrHint(r));
     if (r.app) row(t2, "app", r.app);
     row(t2, "created", fmt(r.created) + " (" + ageText((m.ref - n.created) / DAY) + ")");
     if (n.changed) row(t2, "changed", fmt(r.changed) + " (" + ageText((m.ref - n.changed) / DAY) + ")");
@@ -605,6 +636,10 @@
       row3(t, "distro", ca.distro + " " + ca.version, cb.distro + " " + cb.version);
       row3(t, "collected", sa.collected_at, sb.collected_at);
       row3(t, "nodes", ca.nodes && ca.nodes.count || 0, cb.nodes && cb.nodes.count || 0);
+      ["instance_types", "capacity_types"].forEach(function (k) {
+        var a = ca.nodes && ca.nodes[k], b = cb.nodes && cb.nodes[k];
+        if (a || b) row3(t, k.replace("_", " "), a && counts(a), b && counts(b));
+      });
       row3(t, "resources", sa.resources.length, sb.resources.length);
       box.appendChild(t);
       box.appendChild(el("h3", null, "states (shown resources)"));
@@ -722,8 +757,8 @@
       document.querySelector("header h1").textContent = "kubestrata · compare";
       document.title = "kubestrata · " + CMP.source.context + " → " + CMP.target.context;
     }
-    var scales = $("scales"), names = ["5d", "10d", "30d", "log"];
-    if (CFG.rings && CFG.rings.length) names.push("custom");
+    var scales = $("scales"), names = SCALES.slice();
+    if (CFG.ring_minutes && CFG.ring_minutes.length) names.push("custom");
     names.forEach(function (s) {
       var b = el("button", { "data-scale": s }, s);
       b.addEventListener("click", function () { st.scale = s; refresh(); });
@@ -854,6 +889,7 @@
   var shownAll = 0, drawAll = 0;
   panes.forEach(function (p) { shownAll += p.shown; drawAll += p.drawMs; });
   body.setAttribute("data-status", "ok");
+  body.setAttribute("data-rings", panes[0].sc.rings.map(ringLabel).join(","));
   body.setAttribute("data-shown", String(shownAll));
   body.setAttribute("data-draw-ms", drawAll.toFixed(1));
   body.setAttribute("data-total-ms", (performance.now() - T0).toFixed(1));

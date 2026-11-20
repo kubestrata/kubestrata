@@ -21,7 +21,7 @@ type renderDoc struct {
 }
 
 func newRenderCmd(g *globals) *cobra.Command {
-	var contexts []string
+	var contexts, rings []string
 	var out string
 	var open bool
 	o := render.Options{}
@@ -35,7 +35,7 @@ func newRenderCmd(g *globals) *cobra.Command {
 			if err := g.checkFormat(); err != nil {
 				return err
 			}
-			if err := o.Validate(); err != nil {
+			if err := scaleOptions(&o, rings); err != nil {
 				return err
 			}
 			c, err := g.openCache()
@@ -61,6 +61,12 @@ func newRenderCmd(g *globals) *cobra.Command {
 			if out == "" {
 				out = filepath.Join(c.Dir, "site")
 			}
+			if snaps, err = g.snapshots(snaps); err != nil {
+				return err
+			}
+			for i := range names {
+				names[i] = g.mask(names[i])
+			}
 			o.Version = g.version
 			index, err := render.Write(out, snaps, o)
 			if err != nil {
@@ -84,10 +90,26 @@ func newRenderCmd(g *globals) *cobra.Command {
 	cmd.Flags().StringSliceVarP(&contexts, "context", "c", nil, "context to render (repeatable; default: current context)")
 	cmd.Flags().StringVarP(&out, "output", "o", "", "output directory (default: <cache dir>/site)")
 	cmd.Flags().BoolVar(&open, "open", false, "open the page in the default browser")
-	cmd.Flags().StringVar(&o.Scale, "scale", "30d", "initial ring scale: 5d, 10d, 30d, log or custom")
-	cmd.Flags().StringVar(&o.Axis, "axis", "created", "initial time axis: created or changed")
-	cmd.Flags().IntSliceVar(&o.Rings, "rings", nil, "custom rings in days, ascending (e.g. 5,15,30,90,180,365)")
+	addScaleFlags(cmd, &o, &rings)
 	return cmd
+}
+
+// addScaleFlags registers --scale, --axis and --rings, shared by render and compare.
+func addScaleFlags(cmd *cobra.Command, o *render.Options, rings *[]string) {
+	cmd.Flags().StringVar(&o.Scale, "scale", "30d", "initial ring scale: 30m, 1h, 5d, 10d, 30d, log or custom")
+	cmd.Flags().StringVar(&o.Axis, "axis", "created", "initial time axis: created or changed")
+	cmd.Flags().StringSliceVar(rings, "rings", nil,
+		"custom rings, ascending: m, h or d suffix, a bare number is days (e.g. 30m,2h,1d,7d,30d or 5,15,30,90)")
+}
+
+// scaleOptions reads --rings into the options and validates them.
+func scaleOptions(o *render.Options, rings []string) error {
+	minutes, err := render.ParseRings(rings)
+	if err != nil {
+		return err
+	}
+	o.RingMinutes = minutes
+	return o.Validate()
 }
 
 // loadLatest reads the newest cached snapshot of a context.

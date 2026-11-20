@@ -10,13 +10,15 @@ import (
 
 // Managers: how an object got into the cluster. Drives the migration path.
 const (
-	MgrArgoCD   = "argocd"
-	MgrFlux     = "flux"
-	MgrHelm     = "helm"
-	MgrKubectl  = "kubectl"
-	MgrOperator = "operator"
-	MgrOther    = "other"
-	MgrUnknown  = "unknown"
+	MgrArgoCD    = "argocd"
+	MgrFlux      = "flux"
+	MgrHelm      = "helm"
+	MgrTerraform = "terraform"
+	MgrKubectl   = "kubectl"
+	MgrOperator  = "operator"
+	MgrPlatform  = "platform" // the cluster's own control plane and managed add-ons
+	MgrOther     = "other"
+	MgrUnknown   = "unknown"
 )
 
 // classifyManager prefers explicit labels and annotations, then the creating field manager.
@@ -47,8 +49,14 @@ func mapManager(m string) string {
 		return MgrHelm
 	case l == "kustomize-controller" || l == "helm-controller":
 		return MgrFlux
+	// Terraform: the kubernetes and kubectl providers write as "HashiCorp" (user agent), server-side
+	// apply defaults to "Terraform", the helm provider uses its binary name
+	case l == "hashicorp" || l == "terraform" || strings.HasPrefix(l, "terraform-provider-"):
+		return MgrTerraform
 	case strings.HasPrefix(l, "kubectl"):
 		return MgrKubectl
+	case platformManagers[m]:
+		return MgrPlatform
 	}
 	return MgrOther
 }
@@ -60,8 +68,21 @@ var systemManagers = map[string]bool{
 	"cloud-controller-manager": true,
 }
 
+// platformManagers belong to the cluster itself: the control plane (systemManagers), the
+// bootstrapper (kubeadm, which kind also uses), the EKS control plane and Auto Mode, the OpenShift
+// cluster version operator. What they created is recreated by the target platform.
+var platformManagers = func() map[string]bool {
+	p := map[string]bool{"eks": true, "eks-auto-mode": true, "eks-internal": true, "kubeadm": true,
+		"cluster-version-operator": true}
+	for m := range systemManagers {
+		p[m] = true
+	}
+	return p
+}()
+
 // creatorManager is the manager of the oldest non-status entry: who created the object. Ties at
-// the same second go to a non-system manager.
+// the same second go to a non-system manager, then to a non-platform one (EKS Auto Mode writes
+// defaults into the NodePools Terraform creates, in the same second).
 func creatorManager(mf []metav1.ManagedFieldsEntry) string {
 	pick := func(skipSystem bool) string {
 		var best string
@@ -70,8 +91,9 @@ func creatorManager(mf []metav1.ManagedFieldsEntry) string {
 			if e.Subresource != "" || e.Time == nil || (skipSystem && systemManagers[e.Manager]) {
 				continue
 			}
-			if best == "" || e.Time.Time.Before(bestT) {
-				best, bestT = e.Manager, e.Time.Time
+			t := e.Time.Time
+			if best == "" || t.Before(bestT) || (t.Equal(bestT) && platformManagers[best] && !platformManagers[e.Manager]) {
+				best, bestT = e.Manager, t
 			}
 		}
 		return best

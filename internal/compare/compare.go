@@ -6,7 +6,9 @@
 //	pending  only in the source: not migrated yet
 //	new      only in the target
 //
-// The result is deterministic: the same snapshots give the same document, byte for byte.
+// CompareTimeline does the same for two snapshots of one cluster (kubestrata diff), where pending
+// reads gone. The result is deterministic: the same snapshots give the same document, byte for
+// byte.
 package compare
 
 import (
@@ -189,6 +191,60 @@ func Compare(src, tgt *snapshot.Snapshot) *Result {
 	tot.Coverage = coverage(&tot)
 	res.Totals = tot
 	return res
+}
+
+// Gone is the timeline state of a resource only the older snapshot has.
+const Gone = "gone"
+
+// Timeline is the comparison of two snapshots of the same cluster (kubestrata diff). It keeps the
+// shape of Result: Source is the older snapshot (--from), Target the newer one (--to), and the
+// states are equal, drift, gone (only in the older one) and new (only in the newer one).
+type Timeline struct {
+	SchemaVersion int    `json:"schema_version"`
+	Mode          string `json:"mode"` // "diff"
+	Source        Side   `json:"source"`
+	Target        Side   `json:"target"`
+	// Totals cover the namespaces that are not system namespaces, like Result.
+	Totals     TimelineSummary   `json:"totals"`
+	Namespaces []TimelineSummary `json:"namespaces"`
+	Items      []Item            `json:"items"`
+}
+
+// TimelineSummary counts the timeline states of one namespace ("_" for cluster-scoped).
+type TimelineSummary struct {
+	NS     string `json:"ns"`
+	Team   string `json:"team,omitempty"`
+	System bool   `json:"system,omitempty"`
+	Source int    `json:"source"`
+	Target int    `json:"target"`
+	Equal  int    `json:"equal"`
+	Drift  int    `json:"drift"`
+	Gone   int    `json:"gone"`
+	New    int    `json:"new"`
+}
+
+// Changes is the number of resources that appeared, disappeared or drifted.
+func (s TimelineSummary) Changes() int { return s.Drift + s.Gone + s.New }
+
+// CompareTimeline pairs the resources of two snapshots of one cluster, from the older to the newer.
+func CompareTimeline(from, to *snapshot.Snapshot) *Timeline {
+	r := Compare(from, to)
+	sum := func(s Summary) TimelineSummary {
+		return TimelineSummary{NS: s.NS, Team: s.Team, System: s.System, Source: s.Source, Target: s.Target,
+			Equal: s.Equal, Drift: s.Drift, Gone: s.Pending, New: s.New}
+	}
+	t := &Timeline{SchemaVersion: SchemaVersion, Mode: "diff", Source: r.Source, Target: r.Target,
+		Totals: sum(r.Totals), Namespaces: make([]TimelineSummary, 0, len(r.Namespaces)), Items: r.Items}
+	t.Totals.NS = "total"
+	for _, s := range r.Namespaces {
+		t.Namespaces = append(t.Namespaces, sum(s))
+	}
+	for i := range t.Items {
+		if t.Items[i].State == Pending {
+			t.Items[i].State = Gone
+		}
+	}
+	return t
 }
 
 // Find returns the item of an identity; false when neither side has it.

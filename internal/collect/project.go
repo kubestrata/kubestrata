@@ -525,8 +525,167 @@ func kindFacts(it *item, u *unstructured.Unstructured) bool {
 		}
 	default:
 		f["api_version"] = u.GetAPIVersion()
+		nodeProvisioningFacts(it.res.Group+"/"+it.res.Kind, u, f)
 	}
 	return true
+}
+
+// Node labels that Karpenter, EKS Auto Mode and the cloud providers set.
+const (
+	labelInstanceType = "node.kubernetes.io/instance-type"
+	labelZone         = "topology.kubernetes.io/zone"
+	labelCapacityType = "karpenter.sh/capacity-type"
+	labelNodePool     = "karpenter.sh/nodepool"
+)
+
+// nodeProvisioningFacts reads the Karpenter and EKS Auto Mode kinds (NodeClaim, NodePool,
+// NodeClass, EC2NodeClass) from labels and spec. Status is never read, except the node name of a
+// NodeClaim, which is volatile.
+func nodeProvisioningFacts(groupKind string, u *unstructured.Unstructured, f map[string]any) {
+	obj := u.Object
+	spec := m(obj["spec"])
+	switch groupKind {
+	case "karpenter.sh/NodeClaim":
+		reqs := sl(spec["requirements"])
+		for fact, label := range map[string]string{"instance_type": labelInstanceType, "zone": labelZone,
+			"capacity_type": labelCapacityType, "nodepool": labelNodePool} {
+			if v := u.GetLabels()[label]; v != "" {
+				f[fact] = v
+			} else if v := singleRequirement(reqs, label); v != "" {
+				f[fact] = v
+			}
+		}
+		if ref := nodeClassRef(spec["nodeClassRef"]); ref != "" {
+			f["node_class"] = ref
+		}
+		if n := s(path(obj, "status", "nodeName")); n != "" {
+			f["node"] = n
+		}
+	case "karpenter.sh/NodePool":
+		tpl := m(path(spec, "template", "spec"))
+		if reqs := requirementsSummary(sl(tpl["requirements"])); len(reqs) > 0 {
+			f["requirements"] = reqs
+		}
+		if ref := nodeClassRef(tpl["nodeClassRef"]); ref != "" {
+			f["node_class"] = ref
+		}
+		if v := s(tpl["expireAfter"]); v != "" {
+			f["expire_after"] = v
+		}
+		var limits []string
+		for _, k := range mapKeys(m(spec["limits"])) {
+			limits = append(limits, k+"="+anyString(m(spec["limits"])[k]))
+		}
+		if len(limits) > 0 {
+			f["limits"] = limits
+		}
+		if w, ok := num(spec["weight"]); ok {
+			f["weight"] = w
+		}
+		d := m(spec["disruption"])
+		if v := s(d["consolidationPolicy"]); v != "" {
+			f["consolidation_policy"] = v
+		}
+		if v := anyString(d["consolidateAfter"]); v != "" {
+			f["consolidate_after"] = v
+		}
+		var budgets []string
+		for _, b := range sl(d["budgets"]) {
+			bm := m(b)
+			txt := "nodes=" + anyString(bm["nodes"])
+			if r := strList(bm["reasons"]); len(r) > 0 {
+				txt += " reasons=" + strings.Join(r, ",")
+			}
+			if sc := s(bm["schedule"]); sc != "" {
+				txt += " schedule=" + sc + " for " + s(bm["duration"])
+			}
+			budgets = append(budgets, txt)
+		}
+		if len(budgets) > 0 {
+			f["disruption_budgets"] = budgets
+		}
+	case "eks.amazonaws.com/NodeClass":
+		es := m(spec["ephemeralStorage"])
+		disk := map[string]any{}
+		if v := anyString(es["size"]); v != "" {
+			disk["size"] = v
+		}
+		for _, k := range []string{"iops", "throughput"} {
+			if n, ok := num(es[k]); ok {
+				disk[k] = n
+			}
+		}
+		if len(disk) > 0 {
+			f["ephemeral_storage"] = disk
+		}
+	case "karpenter.k8s.aws/EC2NodeClass":
+		var devs []map[string]any
+		for _, b := range sl(spec["blockDeviceMappings"]) {
+			bm := m(b)
+			ebs := m(bm["ebs"])
+			dev := map[string]any{"device": s(bm["deviceName"])}
+			if v := s(ebs["volumeType"]); v != "" {
+				dev["type"] = v
+			}
+			if v := anyString(ebs["volumeSize"]); v != "" {
+				dev["size"] = v
+			}
+			for _, k := range []string{"iops", "throughput"} {
+				if n, ok := num(ebs[k]); ok {
+					dev[k] = n
+				}
+			}
+			devs = append(devs, dev)
+		}
+		if len(devs) > 0 {
+			f["block_devices"] = devs
+		}
+	}
+}
+
+// singleRequirement is the value of a requirement on key that allows exactly one value.
+func singleRequirement(reqs []any, key string) string {
+	for _, r := range reqs {
+		rm := m(r)
+		if s(rm["key"]) == key && s(rm["operator"]) == "In" {
+			if v := sl(rm["values"]); len(v) == 1 {
+				return s(v[0])
+			}
+		}
+	}
+	return ""
+}
+
+// requirementsSummary writes each requirement as "key Op v1,v2" (values sorted), sorted by key.
+func requirementsSummary(reqs []any) []string {
+	var out []string
+	for _, r := range reqs {
+		rm := m(r)
+		txt := s(rm["key"]) + " " + s(rm["operator"])
+		if v := strList(rm["values"]); len(v) > 0 {
+			txt += " " + strings.Join(v, ",")
+		}
+		if n, ok := num(rm["minValues"]); ok {
+			txt += " (min " + itoa(n) + ")"
+		}
+		out = append(out, txt)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// nodeClassRef names the node class of a NodeClaim or NodePool as group/Kind/name (v1 has group,
+// v1beta1 has apiVersion).
+func nodeClassRef(v any) string {
+	r := m(v)
+	if s(r["name"]) == "" {
+		return ""
+	}
+	g := s(r["group"])
+	if g == "" {
+		g = groupOfAPIVersion(s(r["apiVersion"]))
+	}
+	return g + "/" + s(r["kind"]) + "/" + s(r["name"])
 }
 
 // configMapDigest returns sorted key names and a sha256 over sorted key=value pairs. Values are

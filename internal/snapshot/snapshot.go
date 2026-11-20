@@ -45,10 +45,14 @@ type Cluster struct {
 	Nodes         NodeSummary `json:"nodes"`
 }
 
-// NodeSummary aggregates nodes; individual nodes are not inventory items.
+// NodeSummary aggregates nodes; individual nodes are not inventory items. Instance and capacity
+// types are counted from node labels (node.kubernetes.io/instance-type, karpenter.sh/capacity-type
+// and the cloud equivalents).
 type NodeSummary struct {
 	Count          int            `json:"count"`
 	Arch           map[string]int `json:"arch,omitempty"`
+	InstanceTypes  map[string]int `json:"instance_types,omitempty"`
+	CapacityTypes  map[string]int `json:"capacity_types,omitempty"`
 	Zones          []string       `json:"zones,omitempty"`
 	KubeletVersion []string       `json:"kubelet_versions,omitempty"`
 }

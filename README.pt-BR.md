@@ -20,10 +20,12 @@ migração aparece como um anel no destino.
 
 ## Início rápido
 
-Instale com `go install` (Go 1.27 ou mais novo):
+Instale com `go install` (Go 1.27 ou mais novo). O binário fica em `$(go env GOPATH)/bin`, que
+precisa estar no seu `PATH`:
 
 ```sh
 go install github.com/leosavio/kubestrata/cmd/kubestrata@latest
+export PATH="$(go env GOPATH)/bin:$PATH"
 ```
 
 Ou compile a partir de um clone (o `make build` grava `bin/kubestrata`; o `export` põe o binário
@@ -69,16 +71,22 @@ Visão de comparação entre `kuberito-source` e `kuberito-target`:
 
 ## Comandos
 
-```sh
-kubestrata contexts                       # contextos do kubeconfig (disponível)
-kubestrata collect -c source -c target    # snapshot somente leitura no cache local (disponível)
-kubestrata cache ls                       # snapshots no cache (disponível)
-kubestrata render -c source --open        # visão radial, HTML offline (disponível)
-kubestrata compare -c source -c target    # equal / drift / pending / new e cobertura, HTML lado a lado (disponível)
-kubestrata                                # TUI interativa (planejada)
-```
+| Comando | Faz |
+|---|---|
+| `kubestrata contexts` | contextos do kubeconfig, sem acessar cluster |
+| `kubestrata collect -c source -c target` | snapshot somente leitura no cache local; `--snapshot-out <arquivo\|dir>` também grava o snapshot em JSON puro |
+| `kubestrata cache ls` | snapshots no cache, com o `STAMP` que o `diff` recebe |
+| `kubestrata render -c source --open` | visão radial, HTML offline |
+| `kubestrata compare -c source -c target` | equal / drift / pending / new e cobertura, HTML lado a lado |
+| `kubestrata diff -c source` | dois snapshots do mesmo cluster (o mais novo e o anterior, ou `--from`/`--to`): new / gone / drift / equal |
+| `kubestrata` | TUI interativa (planejada) |
 
-`--format json` imprime um documento para máquina com `schema_version` 1.
+`--format json` imprime um documento para máquina com `schema_version` 1. `--redact` mascara IDs
+de conta AWS e hosts de endpoint EKS/AKS na saída e no site; o cache guarda os valores reais.
+
+Escalas de anéis (`render`/`compare --scale`, também trocáveis na página): `30m` e `1h` (12 anéis
+de 30 minutos ou 1 hora, para cluster novo), `5d`, `10d`, `30d`, `log` e anéis custom com sufixo de
+unidade, `--rings 30m,2h,1d,7d,30d` (número sem sufixo é dia).
 
 O `compare` pareia recursos por `group/Kind/namespace/name` (os nomes dos estados ficam em inglês
 na saída):

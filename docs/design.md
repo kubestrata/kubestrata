@@ -50,9 +50,13 @@ ConfigMap / ServiceAccount) are drawn on hover or selection only.
 | Compare | the same object lands in different places | sectors computed over A∪B: same namespace, same angle on both sides |
 | Determinism | depends on the simulation | same input, same picture |
 
-Ring scales switch in the browser without regenerating: `5d`, `10d`, `30d` (12 linear rings plus
-a compressed outer band), `log` (7d / 30d / 90d / 1y+, saturating at 3 years) and custom
-`--rings 5,15,30,90,180,365`.
+Ring scales switch in the browser without regenerating: `30m`, `1h`, `5d`, `10d`, `30d` (12
+linear rings, 30 min → 6 h, 1 h → 12 h, 5 d → 60 d and so on, plus a compressed outer band up to 3
+years), `log` (7d / 30d / 90d / 1y+, saturating at 3 years) and custom rings
+(`--rings 30m,2h,1d,7d,30d`; the suffixes are `m`, `h` and `d`, and a bare number is days, so
+`--rings 5,15,30,90,180,365` keeps its meaning). The hour scales are for young clusters: a cluster
+created yesterday puts everything inside the first 5-day ring. Ring labels and ages below one day
+read in minutes and hours (`30m`, `1h30m`, "42 minutes", "3 hours").
 
 ## Collection
 
@@ -63,6 +67,10 @@ a compressed outer band), `log` (7d / 30d / 90d / 1y+, saturating at 3 years) an
   identities.
 - Discovery (`ServerPreferredResources`): served kinds, CRDs and OpenShift types without a
   hard-coded list. Distro inferred from API groups, server URL and node labels.
+- Nodes are not inventory items: the cluster gets a node summary (count, architectures, zones,
+  kubelet versions, and instance-type and capacity-type counts from the node labels
+  `node.kubernetes.io/instance-type`, `karpenter.sh/capacity-type`,
+  `eks.amazonaws.com/capacityType`, the GKE Spot/preemptible and AKS Spot labels).
 - API server load: `list`/`get` only, `limit=500` pagination, explicit QPS/burst, at most 4
   contexts and 8 kinds in flight per context.
 - RBAC: a `403` on a kind goes to `errors[]` and collection continues. Listing Secrets grants read
@@ -89,6 +97,28 @@ The snapshot stores a curated projection, never raw objects.
 A test seeds known values into Secrets and env vars and fails if any of them appears in any byte
 of the cache or the site.
 
+### Redaction (`--redact`)
+
+Sanitization keeps secrets out of the cache. What remains still identifies the account: an EKS
+context and user are usually the cluster ARN, with the 12-digit AWS account id, and the endpoint
+host is unique to the cluster. The global flag `--redact` masks them in what kubestrata prints and
+writes for sharing, and leaves the cache as it is:
+
+| Masked | Example |
+|---|---|
+| account id in an ARN | `arn:aws:eks:us-west-2:redacted:cluster/prod` |
+| account id in an ECR registry host | `redacted.dkr.ecr.us-west-2.amazonaws.com/app:1.2` |
+| first label of an EKS or AKS endpoint | `redacted.gr7.us-west-2.eks.amazonaws.com`, `redacted.hcp.eastus.azmk8s.io` |
+| any run of exactly 12 digits in a context, cluster or user name | `redacted_AdministratorAccess` |
+
+It applies to `contexts` (text and JSON), `collect` output and `--snapshot-out` files, `cache ls`,
+`diff`, and the `render` and `compare` output and site (every string of the snapshots and of the
+comparison, error messages included). Every command's error, printed on stderr, goes through the
+same mask, since it often names the context. `compare` and `diff` pair the real snapshots first and
+mask the result, so the states do not change. Cluster ids are hashes and stay as they are. An
+endpoint is a host with at least two labels between the cluster label and `eks.amazonaws.com` or
+`azmk8s.io`, so API groups such as `metrics.eks.amazonaws.com` are not masked.
+
 ## Default kinds and categories
 
 | Category | Kinds | Notes |
@@ -98,8 +128,45 @@ of the cache or the site.
 | config | ConfigMap (minus `kube-root-ca.crt`, `openshift-service-ca.crt`), Secret, ServiceAccount | `helm.sh/release.v1` Secrets grouped as Helm state |
 | storage | PVC, PV, StorageClass, VolumeSnapshot | cluster-scoped kinds get their own sector |
 | policy | HPA, PDB, ResourceQuota, LimitRange, Role, RoleBinding | PDBs affect drain and cutover |
-| CRDs | custom resources in application namespaces | grouped by API group |
-| system | namespaces matching `^(kube-|openshift|amazon-|aws-|gke-|azure-)` | hidden by default (`--exclude-ns`) |
+| CRDs | custom resources in application namespaces | grouped by API group; Karpenter and EKS Auto Mode kinds get their own facts (below) |
+| system | namespaces matching `^(kube-system\|kube-public\|kube-node-lease\|local-path-storage\|openshift(-.*)?\|amazon-.*\|aws-.*\|gke-.*\|azure-.*)$` | hidden by default (`collect --system-ns`); the Kubernetes ones by exact name, so `kube-prometheus-stack` is an application |
+
+The system flag is set at collection time: snapshots cached before a change of the pattern keep
+their flags until the next `collect`.
+
+Karpenter and EKS Auto Mode facts come from labels and spec, never from status (the NodeClaim node
+name is the only status value read, and it is volatile):
+
+| Kind | Facts |
+|---|---|
+| `karpenter.sh` NodeClaim | `instance_type`, `capacity_type`, `zone`, `nodepool` (labels, or a single-valued `In` requirement), `node_class`, `node` |
+| `karpenter.sh` NodePool | `requirements` (`key Op v1,v2`), `limits` (`cpu=1000`), `weight`, `node_class`, `expire_after`, `consolidation_policy`, `consolidate_after`, `disruption_budgets` |
+| `eks.amazonaws.com` NodeClass | `ephemeral_storage` (`size`, `iops`, `throughput`) |
+| `karpenter.k8s.aws` EC2NodeClass | `block_devices` (`device`, `type`, `size`, `iops`, `throughput`) |
+
+## Managers
+
+`manager` says how an object got into the cluster, which drives its migration path. Explicit
+labels and annotations win (Argo CD, Flux, Helm), then ownership by a custom resource (operator),
+then the field manager of the oldest non-status `managedFields` entry. Control-plane managers
+(`kube-controller-manager`, `kube-apiserver`, `kubelet`, `kube-scheduler`,
+`cloud-controller-manager`) count as creator only when no other manager wrote the object; at the
+same second a non-platform manager wins over a platform one (EKS Auto Mode writes defaults into the
+NodePools Terraform creates).
+
+| Manager | From | Migration hint in the page |
+|---|---|---|
+| argocd, flux | labels and annotations; field managers containing `argocd`, `kustomize-controller`, `helm-controller` | GitOps: re-target the destination |
+| helm | labels, annotations, Helm release Secrets | reinstall the release in the target |
+| terraform | field managers `HashiCorp` (kubernetes and kubectl providers), `Terraform` (server-side apply), `terraform-provider-*` | IaC: re-target the Terraform code to the new cluster |
+| operator | controller owner is a custom resource | migrate the custom resource, not its children |
+| kubectl | `kubectl*` | applied by hand: export, clean, move to Git |
+| platform | `eks`, `eks-auto-mode`, `eks-internal`, `kubeadm`, `cluster-version-operator`, and the control-plane managers above when they are the only writers | recreated by the target platform, do not migrate (for a PV or PVC: the object is recreated, move the data) |
+| other | any other field manager (listed in `facts.field_managers`) | unknown tool: check managedFields |
+| unknown | no `managedFields` | no manager data |
+
+Neither `manager` (a resource field) nor `field_managers` (a volatile fact) enters the
+fingerprint, so a change of tool alone is not a drift.
 
 ## Snapshot contract (`schema_version: 1`)
 
@@ -110,7 +177,8 @@ of the cache or the site.
   "collected_at": "2026-11-17T12:12:00Z",
   "cluster": {"id": "3f9a1c0b7e21", "context": "source", "server_host": "api.example:6443",
               "distro": "openshift", "distro_signals": ["group route.openshift.io"], "version": "v1.27.x",
-              "nodes": {"count": 12, "arch": {"amd64": 12}, "zones": ["a", "b"]}},
+              "nodes": {"count": 12, "arch": {"amd64": 12}, "instance_types": {"m6a.large": 12},
+                        "capacity_types": {"on-demand": 10, "spot": 2}, "zones": ["a", "b"]}},
   "namespaces": [{"name": "payments", "team": "team-payments", "created": "2024-06-01T00:00:00Z"}],
   "resources": [{
     "id": "apps/Deployment/payments/api", "cat": "workload", "ns": "payments", "name": "api",
@@ -145,7 +213,9 @@ consumer that receives a higher `schema_version` than it supports refuses the do
 
 Pods, ReplicaSets, ReplicationControllers and Jobs are folded into the nearest shown owner
 (`pods`, `ready`, `restarts`, `pod_newest`, `pod_oldest`, `archs`, `last_rollout`, `jobs`,
-`last_run`). Without an owner they are shown with `facts.orphan`.
+`last_run`). The owner chain is walked up to the first shown object, so a custom resource gets
+the facts too: a SparkApplication owns its driver pod, the driver owns the executor pods, and all
+of them count in the SparkApplication. Without an owner they are shown with `facts.orphan`.
 
 ## Comparison
 
@@ -165,9 +235,10 @@ Identity key: the resource id `group/Kind/namespace/name`. States:
 | new | only in the target | `#42a5f5` |
 
 The fingerprint is a hash of the kind and its projected facts **minus a volatile set** (pod
-counts, readiness, restarts, pod and rollout times, Job runs, architectures, field managers,
-missing refs, Helm revision and status, orphan flags). A full-spec hash would flag defaulting
-differences between Kubernetes versions; the projection per kind decides what counts:
+counts, readiness, restarts, pod and rollout times, Job runs, architectures, phases, node and
+volume names, field managers, missing refs, Helm revision and status, orphan flags). A full-spec
+hash would flag defaulting differences between Kubernetes versions; the projection per kind
+decides what counts:
 
 | Kind | Facts in the fingerprint (main ones) |
 |---|---|
@@ -178,6 +249,7 @@ differences between Kubernetes versions; the projection per kind decides what co
 | ConfigMap | key names + content hash |
 | Secret | type + key count |
 | ServiceAccount | cloud identity type (`aws-irsa`, ...), image pull secret count |
+| NodeClaim, NodePool, NodeClass, EC2NodeClass | the Karpenter and Auto Mode facts above, all from labels and spec |
 
 Volume, envFrom and Secret/ConfigMap references are edges, not facts: they do not enter the
 fingerprint.
@@ -215,6 +287,30 @@ what does not match. The footer counts each identity once over both panes; its s
 follow the active filters (categories, system, namespace), and its coverage is the total over all
 non-system namespaces, the same as the CLI total.
 
+## Diff over time
+
+`kubestrata diff -c <context> [--from <stamp>] [--to <stamp>]` compares two cached snapshots of
+the cluster behind a context, by default the newest and the one before it. It reuses
+`internal/compare` and the comparison document (`schema_version` 1, `"mode": "diff"`): `source`
+is the older snapshot (`--from`), `target` the newer one (`--to`), and the states are:
+
+| State | Meaning |
+|---|---|
+| equal | in both snapshots, same fingerprint |
+| drift | in both, different fingerprint; `diff[]` lists the facts that changed |
+| gone | only in the older snapshot |
+| new | only in the newer snapshot |
+
+The per-namespace summaries count `equal`, `drift`, `gone` and `new` (no coverage); the totals
+leave system namespaces out, like `compare`. The text output lists the namespaces with changes,
+then one row per changed resource with the facts as `fact: old → new`, and names the system
+namespaces that changed. Stamps are the snapshot file names shown in the `STAMP` column of
+`kubestrata cache ls` (`20261120T144809Z`); RFC 3339 times work too. Uses: what an autoscaler or a
+job created between two moments (NodeClaims come and go in minutes), what changed in a workload
+(image, replicas, requests), and proof of cleanup (no `new` or `gone` left after a test). There is
+no site for `diff` yet: the data files are keyed by cluster id (`data/<cluster_id>.js`), and both
+snapshots have the same one.
+
 ## CLI and TUI
 
 Fang v2 over Cobra for commands; Bubble Tea v2, Bubbles v2, Lip Gloss v2 and Huh for the TUI.
@@ -224,18 +320,23 @@ Fang v2 over Cobra for commands; Bubble Tea v2, Bubbles v2, Lip Gloss v2 and Huh
 |---|---|
 | `kubestrata` | TUI: contexts, cache age, status; `r` refresh, `g` generate, `c` compare, `o` open |
 | `kubestrata contexts` | kubeconfig contexts (no cluster access) |
-| `kubestrata collect [-c ctx]... [--all] [--kinds ...] [--max-age 6h] [--force]` | writes the cache; reuses a snapshot newer than `--max-age` |
-| `kubestrata render [-c ctx] [--scale 5d\|10d\|30d\|log] [--axis created\|changed] [-o dir] [--open]` | site from the cache |
-| `kubestrata compare -c source -c target [--scale ...] [--axis ...] [-o dir] [--open]` | coverage table on stdout and side-by-side site from the cache |
-| `kubestrata cache ls\|prune [--keep 5]` | snapshot housekeeping |
+| `kubestrata collect [-c ctx]... [--all] [--max-age 6h] [--force] [--snapshot-out file\|dir]` | writes the cache; reuses a snapshot newer than `--max-age`; `--format json` prints a summary per context, `--snapshot-out` also writes the snapshot as plain JSON (`0600`): to a file for one context, as `<cluster_id>.json` into an existing directory for several |
+| `kubestrata render [-c ctx] [--scale 30m\|1h\|5d\|10d\|30d\|log] [--rings 30m,2h,1d] [--axis created\|changed] [-o dir] [--open]` | site from the cache |
+| `kubestrata compare -c source -c target [--scale ...] [--rings ...] [--axis ...] [-o dir] [--open]` | coverage table on stdout and side-by-side site from the cache |
+| `kubestrata diff -c ctx [--from stamp] [--to stamp]` | two snapshots of one cluster: new / gone / drift / equal (CLI and JSON) |
+| `kubestrata cache ls\|prune [--keep 5]` | snapshot housekeeping; `ls` shows the `STAMP` that `diff` takes |
+
+`--redact` (global) masks account ids and endpoint hosts in every output (see Redaction).
 
 The page state lives in the URL hash (`#scale=log&axis=changed&color=manager&ns=<namespace>&sel=<id>`),
 so a view can be bookmarked and checked headless; `ns=` works in the single-cluster view too. A
 Content-Security-Policy (`default-src 'none'`) keeps the page off the network. After the first draw
-the page writes `data-status`, `data-shown` (resources drawn, summed over the panes),
-`data-draw-ms` and `data-total-ms` on `<body>` for automated checks. `make page-check` writes both
-sites from the cache, loads them in headless Chrome for several hash states and fails unless every
-page reports `data-status="ok"`. Measured in headless Chrome on an M4: 20 000 resources draw in
+the page writes `data-status`, `data-rings` (ring labels of the first pane), `data-shown`
+(resources drawn, summed over the panes), `data-draw-ms` and `data-total-ms` on `<body>` for
+automated checks. `make page-check` writes both sites (and a render with custom rings) from the
+cache, loads them in headless Chrome for several hash states, including the `30m` and `1h`
+scales, and fails unless every page reports `data-status="ok"` and, where it checks them, the
+expected ring labels. Measured in headless Chrome on an M4: 20 000 resources draw in
 about 10–16 ms (first paint about 50 ms, 4.8 MB data file).
 
 Site output (default `<cache dir>/site` for `render`, `<cache dir>/compare` for `compare`):
@@ -250,4 +351,4 @@ for machines; `compare` adds `data/compare.js` (`window.KUBESTRATA_COMPARE = {..
 |---|---|---|
 | F1 (v0.1.0) | contexts, collect + cache, render, compare, basic TUI, JSON output | e2e green on two local clusters; golden HTML identical across runs; no-leak test green; page loads with no JS error in headless Chrome; 20k nodes pan and zoom measured |
 | F2 | migration units, classification (manager, state, exposure, cloud coupling, end of life), `plan --format json\|csv\|md`, per-team brief, `--map-ns` | plan for the fixture matches a fixed ground truth |
-| F3 | temporal diff between snapshots, multi-arch image check, `kubectl strata` via Krew | decided once F2 is in real use |
+| F3 | site for the temporal diff (`diff` is in the CLI and JSON already), multi-arch image check, `kubectl strata` via Krew | decided once F2 is in real use |
