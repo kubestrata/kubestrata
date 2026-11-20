@@ -129,6 +129,9 @@ func printDiff(w io.Writer, t *compare.Timeline) error {
 			s.CollectedAt.Format(time.RFC3339), cache.Stamp(s.CollectedAt), s.Resources)
 	}
 	lines := []string{side("from", t.Source), side("to  ", t.Target)}
+	if note := collectorNote(t.Collector); note != "" {
+		lines = append(lines, note)
+	}
 	if t.Totals.Changes() == 0 {
 		lines = append(lines, "no changes outside system namespaces")
 	} else {
@@ -176,6 +179,22 @@ func printDiff(w io.Writer, t *compare.Timeline) error {
 	}
 	_, err := lipgloss.Fprintln(w, strings.Join(lines, "\n"))
 	return err
+}
+
+// collectorNote explains a comparison of snapshots taken by different kubestrata versions.
+func collectorNote(c *compare.CollectorChange) string {
+	if c == nil {
+		return ""
+	}
+	from, to := c.From, c.To
+	if from == "" {
+		from = "unknown"
+	}
+	if to == "" {
+		to = "unknown"
+	}
+	return fmt.Sprintf("note: the snapshots come from different kubestrata versions (%s → %s), so a fact only one of them "+
+		"has is not counted as drift; resources that differ only in such facts: %d (collector_facts in --format json)", from, to, c.Resources)
 }
 
 // nameOf is the last segment of an id group/Kind/namespace/name.

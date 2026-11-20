@@ -41,7 +41,14 @@ Design completo: `docs/design.md`.
 
 ## Estado atual (onde parei)
 
-> Última atualização: 2026-11-20
+> Última atualização: 2026-11-20 (validação 2 do workshop)
+
+Validação 2 no workshop Spark on EKS (`aws-spark-on-eks-workshop/extra-02-avaliacao-ferramentas/kubestrata-avaliacao.md`,
+build `ca851b5`): K1a–K1c, K3, K4 e K6 ok; o `diff` bate com o `snapdiff.sh` do workshop. K10: o
+`diff` e o `compare` entre snapshots de versões diferentes do coletor só contam como drift os fatos
+que os dois lados têm (`collector_facts` por item, `collector_change` no documento, nota no texto).
+K9: `collect --snapshot-out` sem `--redact` avisa no stderr. K11 (duas coletas `--force` iguais)
+ficou como está. `make check`, `make page-check` (20/20) e `make lab-test` verdes.
 
 Sessão 2026-11-20 (workflow `wf_fd5a30f0a91e7204`, lane 1, mudanças sem commit para revisão do
 orquestrador): achados da avaliação no workshop AWS (EKS Auto Mode + Spark + Terraform,

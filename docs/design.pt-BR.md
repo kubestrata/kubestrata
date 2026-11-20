@@ -120,7 +120,8 @@ mesma máscara, porque costuma citar o contexto. O `compare` e o `diff` pareiam 
 primeiro e mascaram o resultado, então os estados não mudam. Os ids de cluster são hashes e ficam
 como estão. Endpoint é um host com pelo menos dois labels entre o label do cluster e
 `eks.amazonaws.com` ou `azmk8s.io`, então grupos de API como `metrics.eks.amazonaws.com` não são
-mascarados.
+mascarados. Sem `--redact`, o `collect --snapshot-out` imprime uma nota no stderr (saída em texto):
+o arquivo sai do cache, então é a saída com mais chance de ser compartilhada.
 
 ## Kinds e categorias padrão
 
@@ -308,6 +309,16 @@ JSON) são:
 | drift | nos dois, fingerprint diferente; o `diff[]` lista os fatos que mudaram |
 | gone (sumiu) | só no snapshot mais antigo |
 | new (novo) | só no snapshot mais novo |
+
+Snapshots de duas versões do kubestrata (`tool.version` diferente) podem diferir em fatos só porque
+uma versão os coleta (os fatos de Auto Mode de NodePool, NodeClaim e NodeClass, que entraram numa
+release), e o fingerprint cobre os fatos que cada versão coleta. Por isso, no `diff` e no `compare`,
+só os fatos que os dois lados têm decidem o drift: fato que só um lado tem vai para
+`collector_facts` do item, e `collector_change` (`from`, `to`, `resources`) no topo do documento
+conta os recursos que diferem só nesses fatos. A saída em texto imprime uma nota com as duas
+versões. O custo: um fato que o usuário define entre dois snapshots de versões diferentes (o
+`weight` de um NodePool) aparece ali, não como drift. Com uma versão só, fato novo é drift, como
+antes.
 
 Os resumos por namespace contam `equal`, `drift`, `gone` e `new` (sem cobertura); os totais deixam
 de fora os namespaces de sistema, como no `compare`. A saída em texto lista os namespaces com

@@ -253,4 +253,54 @@ func TestSnapshotOut(t *testing.T) {
 	if _, err := run(t, append(base, "-c", "source", "--snapshot-out", filepath.Join(t.TempDir(), "no", "dir.json"))...); err == nil {
 		t.Error("accepted a file in a missing directory")
 	}
+	// Text output warns that the file is not redacted, unless --redact masks it.
+	if !strings.Contains(text, "pass --redact to mask them") {
+		t.Errorf("no redaction note:\n%s", text)
+	}
+	red, err := run(t, append(base, "--redact", "-c", "source", "--snapshot-out", file)...)
+	if err != nil || strings.Contains(red, "pass --redact") {
+		t.Errorf("--redact run: %v\n%s", err, red)
+	}
+}
+
+// Snapshots of two kubestrata versions: a fact only the newer one collects is not drift.
+func TestDiffAcrossCollectorVersions(t *testing.T) {
+	dir := t.TempDir()
+	c, err := cache.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 11, 20, 14, 0, 0, 0, time.UTC)
+	pool := func(facts map[string]any, fp string) snapshot.Resource {
+		return snapshot.Resource{ID: "karpenter.sh/NodePool/_/general", Group: "karpenter.sh", Kind: "NodePool",
+			Name: "general", Created: at, Facts: facts, FP: fp}
+	}
+	for i, s := range []struct {
+		version string
+		res     snapshot.Resource
+	}{
+		{"v0.0.0-old", pool(map[string]any{"requirements": []string{"arch In arm64"}}, "sha256:a")},
+		{"v0.0.0-new", pool(map[string]any{"requirements": []string{"arch In arm64"}, "weight": 25}, "sha256:b")},
+	} {
+		snap := &snapshot.Snapshot{SchemaVersion: snapshot.SchemaVersion, CollectedAt: at.Add(time.Duration(i) * time.Hour),
+			Tool:      snapshot.Tool{Name: "kubestrata", Version: s.version},
+			Cluster:   snapshot.Cluster{ID: "eeeeeeeeeeee", Context: "auto", Distro: "eks", Version: "v1.36.0"},
+			Resources: []snapshot.Resource{s.res}}
+		snap.Normalize()
+		if _, err := c.Put(snap); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := run(t, "diff", "--cache-dir", dir, "-c", "auto")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if !strings.Contains(out, "different kubestrata versions (v0.0.0-old → v0.0.0-new)") ||
+		!strings.Contains(out, "resources that differ only in such facts: 1") || !strings.Contains(out, "no changes outside system namespaces") {
+		t.Errorf("diff across versions:\n%s", out)
+	}
+	js, err := run(t, "diff", "--cache-dir", dir, "-c", "auto", "--format", "json")
+	if err != nil || !strings.Contains(js, `"collector_facts": [`) || !strings.Contains(js, `"tool": "v0.0.0-new"`) {
+		t.Errorf("diff json across versions: %v\n%s", err, js)
+	}
 }
