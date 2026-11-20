@@ -38,6 +38,8 @@ type Result struct {
 	SchemaVersion int  `json:"schema_version"`
 	Source        Side `json:"source"`
 	Target        Side `json:"target"`
+	// Collector is set when the snapshots come from different kubestrata versions.
+	Collector *CollectorChange `json:"collector_change,omitempty"`
 	// Totals cover the namespaces that are not system namespaces, like the default view.
 	Totals     Summary   `json:"totals"`
 	Namespaces []Summary `json:"namespaces"`
@@ -52,6 +54,18 @@ type Side struct {
 	Version     string    `json:"version"`
 	CollectedAt time.Time `json:"collected_at"`
 	Resources   int       `json:"resources"`
+	// Tool is the kubestrata version that collected the snapshot.
+	Tool string `json:"tool,omitempty"`
+}
+
+// CollectorChange describes two snapshots collected by different kubestrata versions. A
+// version can collect a fact the other does not (the Auto Mode facts of NodePool, NodeClaim and
+// NodeClass), so a fact only one side has is not counted as drift: the item lists it in
+// collector_facts. Resources counts the items that differ only in such facts.
+type CollectorChange struct {
+	From      string `json:"from"`
+	To        string `json:"to"`
+	Resources int    `json:"resources"`
 }
 
 // Summary counts the states of one namespace ("_" for cluster-scoped resources).
@@ -77,6 +91,9 @@ type Item struct {
 	Kind  string `json:"kind"`
 	State string `json:"state"`
 	Diff  []Diff `json:"diff,omitempty"`
+	// Collector lists the facts only one side has, when the snapshots come from different
+	// kubestrata versions; they do not make the item drift.
+	Collector []string `json:"collector_facts,omitempty"`
 }
 
 // Diff is one fingerprint-relevant fact that differs. A side without the fact has no value.
@@ -90,6 +107,10 @@ type Diff struct {
 func Compare(src, tgt *snapshot.Snapshot) *Result {
 	res := &Result{SchemaVersion: SchemaVersion, Source: side(src), Target: side(tgt),
 		Namespaces: []Summary{}, Items: []Item{}}
+	mixed := src.Tool.Version != tgt.Tool.Version
+	if mixed {
+		res.Collector = &CollectorChange{From: src.Tool.Version, To: tgt.Tool.Version}
+	}
 	a, b := index(src), index(tgt)
 	ids := make([]string, 0, len(a)+len(b))
 	for id := range a {
@@ -142,7 +163,17 @@ func Compare(src, tgt *snapshot.Snapshot) *Result {
 			it.State = Equal
 			if ra.FP == "" || ra.FP != rb.FP {
 				// without fingerprints, the relevant facts decide
-				if diff := diffFacts(ra.Facts, rb.Facts); len(diff) > 0 || ra.FP != rb.FP {
+				diff := diffFacts(ra.Facts, rb.Facts)
+				if mixed {
+					// The fingerprint covers the facts a version collects, so it cannot tell a
+					// new fact of the collector from a change: only facts both sides have count.
+					diff, it.Collector = splitOneSided(diff, ra.Facts, rb.Facts)
+					if len(diff) > 0 {
+						it.State, it.Diff = Drift, diff
+					} else if len(it.Collector) > 0 {
+						res.Collector.Resources++
+					}
+				} else if len(diff) > 0 || ra.FP != rb.FP {
 					it.State, it.Diff = Drift, diff
 				}
 			}
@@ -204,6 +235,8 @@ type Timeline struct {
 	Mode          string `json:"mode"` // "diff"
 	Source        Side   `json:"source"`
 	Target        Side   `json:"target"`
+	// Collector is set when the snapshots come from different kubestrata versions (see Result).
+	Collector *CollectorChange `json:"collector_change,omitempty"`
 	// Totals cover the namespaces that are not system namespaces, like Result.
 	Totals     TimelineSummary   `json:"totals"`
 	Namespaces []TimelineSummary `json:"namespaces"`
@@ -233,7 +266,7 @@ func CompareTimeline(from, to *snapshot.Snapshot) *Timeline {
 		return TimelineSummary{NS: s.NS, Team: s.Team, System: s.System, Source: s.Source, Target: s.Target,
 			Equal: s.Equal, Drift: s.Drift, Gone: s.Pending, New: s.New}
 	}
-	t := &Timeline{SchemaVersion: SchemaVersion, Mode: "diff", Source: r.Source, Target: r.Target,
+	t := &Timeline{SchemaVersion: SchemaVersion, Mode: "diff", Source: r.Source, Target: r.Target, Collector: r.Collector,
 		Totals: sum(r.Totals), Namespaces: make([]TimelineSummary, 0, len(r.Namespaces)), Items: r.Items}
 	t.Totals.NS = "total"
 	for _, s := range r.Namespaces {
@@ -258,7 +291,8 @@ func (r *Result) Find(id string) (Item, bool) {
 
 func side(s *snapshot.Snapshot) Side {
 	return Side{ClusterID: s.Cluster.ID, Context: s.Cluster.Context, Distro: s.Cluster.Distro,
-		Version: s.Cluster.Version, CollectedAt: s.CollectedAt.UTC(), Resources: len(s.Resources)}
+		Version: s.Cluster.Version, CollectedAt: s.CollectedAt.UTC(), Resources: len(s.Resources),
+		Tool: s.Tool.Version}
 }
 
 func index(s *snapshot.Snapshot) map[string]snapshot.Resource {
@@ -322,6 +356,22 @@ func diffFacts(a, b map[string]any) []Diff {
 		out = append(out, Diff{Fact: k, Source: va, Target: vb})
 	}
 	return out
+}
+
+// splitOneSided separates the facts both sides have from the names of those only one side has.
+func splitOneSided(diff []Diff, a, b map[string]any) ([]Diff, []string) {
+	var shared []Diff
+	var oneSided []string
+	for _, d := range diff {
+		_, okA := a[d.Fact]
+		_, okB := b[d.Fact]
+		if okA && okB {
+			shared = append(shared, d)
+		} else {
+			oneSided = append(oneSided, d.Fact)
+		}
+	}
+	return shared, oneSided
 }
 
 // sameJSON compares values the way they are stored: a snapshot read from the cache holds

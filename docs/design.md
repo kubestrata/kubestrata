@@ -117,7 +117,9 @@ comparison, error messages included). Every command's error, printed on stderr, 
 same mask, since it often names the context. `compare` and `diff` pair the real snapshots first and
 mask the result, so the states do not change. Cluster ids are hashes and stay as they are. An
 endpoint is a host with at least two labels between the cluster label and `eks.amazonaws.com` or
-`azmk8s.io`, so API groups such as `metrics.eks.amazonaws.com` are not masked.
+`azmk8s.io`, so API groups such as `metrics.eks.amazonaws.com` are not masked. Without `--redact`,
+`collect --snapshot-out` prints a note on stderr (text output): the file leaves the cache, so it is
+the output most likely to be shared.
 
 ## Default kinds and categories
 
@@ -300,6 +302,15 @@ is the older snapshot (`--from`), `target` the newer one (`--to`), and the state
 | drift | in both, different fingerprint; `diff[]` lists the facts that changed |
 | gone | only in the older snapshot |
 | new | only in the newer snapshot |
+
+Snapshots of two kubestrata versions (`tool.version` differs) can differ in facts only because one
+version collects them (the Auto Mode facts of NodePool, NodeClaim and NodeClass, added in one
+release), and the fingerprint covers whatever facts a version collects. So, for `diff` and
+`compare` alike, only the facts both sides have decide drift: a fact only one side has goes to the
+item's `collector_facts`, and `collector_change` (`from`, `to`, `resources`) at the top of the
+document counts the resources that differ only in such facts. The text output prints a note with
+the two versions. The cost: a fact a user sets between two snapshots of different versions (a
+NodePool `weight`) is listed there, not as drift. With one version, a new fact is drift, as before.
 
 The per-namespace summaries count `equal`, `drift`, `gone` and `new` (no coverage); the totals
 leave system namespaces out, like `compare`. The text output lists the namespaces with changes,

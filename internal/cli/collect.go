@@ -116,6 +116,11 @@ func newCollectCmd(g *globals) *cobra.Command {
 			if err := printCollect(cmd, g, results); err != nil {
 				return err
 			}
+			if f.snapshotOut != "" && !g.redact && g.format != "json" && len(notWritten) < len(results)-len(failed) {
+				// The file leaves the cache and is more likely to be shared than the cache is.
+				fmt.Fprintln(cmd.ErrOrStderr(), "note: --snapshot-out keeps the endpoint hosts and account ids of the cluster; "+
+					"pass --redact to mask them before sharing the file")
+			}
 			var errs []string
 			if len(failed) > 0 {
 				errs = append(errs, "collection failed for "+strings.Join(failed, ", "))

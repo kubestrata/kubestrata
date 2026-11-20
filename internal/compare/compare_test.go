@@ -159,6 +159,42 @@ func TestNoFingerprint(t *testing.T) {
 	}
 }
 
+// Snapshots of different kubestrata versions: a fact only one side has is listed in
+// collector_facts and does not make the item drift; a fact both sides have still does.
+func TestCollectorVersions(t *testing.T) {
+	src, tgt := snaps()
+	src.Tool.Version, tgt.Tool.Version = "v1", "v2"
+	src.Resources = []snapshot.Resource{
+		res("karpenter.sh/NodePool/_/a", "", "NodePool", "sha256:1", map[string]any{"limits": []string{"cpu=10"}}),
+		res("karpenter.sh/NodePool/_/b", "", "NodePool", "sha256:2", map[string]any{"limits": []string{"cpu=10"}}),
+	}
+	tgt.Resources = []snapshot.Resource{
+		res("karpenter.sh/NodePool/_/a", "", "NodePool", "sha256:3", map[string]any{"limits": []string{"cpu=10"}, "weight": 25}),
+		res("karpenter.sh/NodePool/_/b", "", "NodePool", "sha256:4", map[string]any{"limits": []string{"cpu=20"}, "weight": 25}),
+	}
+	r := Compare(src, tgt)
+	a, _ := r.Find("karpenter.sh/NodePool/_/a")
+	b, _ := r.Find("karpenter.sh/NodePool/_/b")
+	if a.State != Equal || len(a.Collector) != 1 || a.Collector[0] != "weight" || len(a.Diff) != 0 {
+		t.Errorf("a: %+v", a)
+	}
+	if b.State != Drift || len(b.Diff) != 1 || b.Diff[0].Fact != "limits" || len(b.Collector) != 1 {
+		t.Errorf("b: %+v", b)
+	}
+	if r.Collector == nil || r.Collector.From != "v1" || r.Collector.To != "v2" || r.Collector.Resources != 1 ||
+		r.Source.Tool != "v1" || r.Target.Tool != "v2" {
+		t.Errorf("collector %+v, sides %q %q", r.Collector, r.Source.Tool, r.Target.Tool)
+	}
+	if tl := CompareTimeline(src, tgt); tl.Collector == nil || tl.Totals.Drift != 1 {
+		t.Errorf("timeline: %+v", tl.Totals)
+	}
+	// Same version: the new fact is a change of the object.
+	tgt.Tool.Version = "v1"
+	if a, _ := Compare(src, tgt).Find("karpenter.sh/NodePool/_/a"); a.State != Drift || len(a.Collector) != 0 {
+		t.Errorf("same version a: %+v", a)
+	}
+}
+
 func TestDeterministic(t *testing.T) {
 	a, _ := json.Marshal(Compare(snaps()))
 	src, tgt := snaps()

@@ -131,6 +131,9 @@ func printCompare(w io.Writer, r *compare.Result, url string) error {
 	if len(system) > 0 {
 		lines = append(lines, "system namespaces, not in the total: "+strings.Join(system, ", "))
 	}
+	if note := collectorNote(r.Collector); note != "" {
+		lines = append(lines, note)
+	}
 	lines = append(lines, url)
 	_, err := lipgloss.Fprintln(w, strings.Join(lines, "\n"))
 	return err
