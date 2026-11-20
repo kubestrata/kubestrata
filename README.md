@@ -45,12 +45,9 @@ kubestrata compare -c <source> -c <target> --open   # side by side, with the cov
 
 `render` and `compare` read the cache only. Run `collect --force` to refresh it.
 
-While the repository is private, both paths need git access to it, and `go install` also needs
-`GOPRIVATE=github.com/leosavio/*`.
-
 ### No cluster at hand? Try it on the kuberito lab
 
-[kuberito](https://github.com/leosavio/kuberito) brings up two small local clusters on Docker, an
+[kuberito](https://github.com/leosavio/kuberito) (not public yet) brings up two small local clusters on Docker, an
 OpenShift-like source and an EKS-like target, with a migration in progress. Install it as its
 README describes, then:
 
@@ -98,6 +95,10 @@ of the totals.
 ## Design
 
 See [docs/design.md](docs/design.md).
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

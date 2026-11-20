@@ -45,12 +45,9 @@ kubestrata compare -c <origem> -c <destino> --open  # lado a lado, com a cobertu
 
 `render` e `compare` só leem o cache. Rode `collect --force` para atualizá-lo.
 
-Enquanto o repositório for privado, os dois caminhos precisam de acesso git a ele, e o `go install`
-também precisa de `GOPRIVATE=github.com/leosavio/*`.
-
 ### Sem cluster à mão? Teste no lab do kuberito
 
-O [kuberito](https://github.com/leosavio/kuberito) sobe dois clusters locais pequenos no Docker,
+O [kuberito](https://github.com/leosavio/kuberito) (ainda não público) sobe dois clusters locais pequenos no Docker,
 uma origem parecida com OpenShift e um destino parecido com EKS, com uma migração em andamento.
 Instale como o README dele descreve e depois:
 
@@ -100,6 +97,10 @@ dos totais.
 
 Ver [docs/design.pt-BR.md](docs/design.pt-BR.md) (versão oficial em inglês:
 [docs/design.md](docs/design.md)).
+
+## Como contribuir
+
+Veja [CONTRIBUTING.pt-BR.md](CONTRIBUTING.pt-BR.md), [SECURITY.md](SECURITY.md) e [CHANGELOG.md](CHANGELOG.md).
 
 ## Licença
 
