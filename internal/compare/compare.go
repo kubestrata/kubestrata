@@ -18,8 +18,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/leosavio/kubestrata/internal/collect"
-	"github.com/leosavio/kubestrata/internal/snapshot"
+	"github.com/kubestrata/kubestrata/internal/collect"
+	"github.com/kubestrata/kubestrata/internal/snapshot"
 )
 
 // SchemaVersion of the comparison document. Consumers must refuse a higher value.

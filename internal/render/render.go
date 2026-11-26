@@ -19,9 +19,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/leosavio/kubestrata/internal/compare"
-	"github.com/leosavio/kubestrata/internal/snapshot"
-	"github.com/leosavio/kubestrata/web"
+	"github.com/kubestrata/kubestrata/internal/compare"
+	"github.com/kubestrata/kubestrata/internal/snapshot"
+	"github.com/kubestrata/kubestrata/web"
 )
 
 // ViewSchemaVersion is the version of the view config embedded in the page.

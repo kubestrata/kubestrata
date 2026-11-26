@@ -10,10 +10,10 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
 
-	"github.com/leosavio/kubestrata/internal/cache"
-	"github.com/leosavio/kubestrata/internal/compare"
-	"github.com/leosavio/kubestrata/internal/redact"
-	"github.com/leosavio/kubestrata/internal/snapshot"
+	"github.com/kubestrata/kubestrata/internal/cache"
+	"github.com/kubestrata/kubestrata/internal/compare"
+	"github.com/kubestrata/kubestrata/internal/redact"
+	"github.com/kubestrata/kubestrata/internal/snapshot"
 )
 
 func newDiffCmd(g *globals) *cobra.Command {

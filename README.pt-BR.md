@@ -1,6 +1,6 @@
 # kubestrata
 
-[![CI](https://github.com/leosavio/kubestrata/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/leosavio/kubestrata/actions/workflows/ci.yml?query=branch%3Amain)
+[![CI](https://github.com/kubestrata/kubestrata/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kubestrata/kubestrata/actions/workflows/ci.yml?query=branch%3Amain)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 [![Go 1.27](https://img.shields.io/badge/go-1.27-00ADD8)](go.mod)
 
@@ -24,7 +24,7 @@ Instale com `go install` (Go 1.27 ou mais novo). O binário fica em `$(go env GO
 precisa estar no seu `PATH`:
 
 ```sh
-go install github.com/leosavio/kubestrata/cmd/kubestrata@latest
+go install github.com/kubestrata/kubestrata/cmd/kubestrata@latest
 export PATH="$(go env GOPATH)/bin:$PATH"
 ```
 
@@ -32,7 +32,7 @@ Ou compile a partir de um clone (o `make build` grava `bin/kubestrata`; o `expor
 no `PATH` deste shell):
 
 ```sh
-git clone https://github.com/leosavio/kubestrata.git && cd kubestrata
+git clone https://github.com/kubestrata/kubestrata.git && cd kubestrata
 make build && export PATH="$PWD/bin:$PATH"
 ```
 
@@ -49,7 +49,7 @@ kubestrata compare -c <origem> -c <destino> --open  # lado a lado, com a cobertu
 
 ### Sem cluster à mão? Teste no lab do kuberito
 
-O [kuberito](https://github.com/leosavio/kuberito) (ainda não público) sobe dois clusters locais pequenos no Docker,
+O [kuberito](https://github.com/kuberito/kuberito) (ainda não público) sobe dois clusters locais pequenos no Docker,
 uma origem parecida com OpenShift e um destino parecido com EKS, com uma migração em andamento.
 Instale como o README dele descreve e depois:
 

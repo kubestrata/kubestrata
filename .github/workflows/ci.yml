@@ -26,7 +26,7 @@ jobs:
         run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
 
       # The lab e2e (test/e2e, build tag lab) is vetted here but runs only locally: it needs a
-      # running kuberito lab (https://github.com/leosavio/kuberito, `make lab-test`).
+      # running kuberito lab (https://github.com/kuberito/kuberito, `make lab-test`).
       - name: go vet
         run: go vet ./... && go vet -tags lab ./test/...
 

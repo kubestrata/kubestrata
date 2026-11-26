@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leosavio/kubestrata/internal/snapshot"
+	"github.com/kubestrata/kubestrata/internal/snapshot"
 )
 
 func snap(id, ctx string, at time.Time) *snapshot.Snapshot {

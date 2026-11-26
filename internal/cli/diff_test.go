@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leosavio/kubestrata/internal/cache"
-	"github.com/leosavio/kubestrata/internal/snapshot"
+	"github.com/kubestrata/kubestrata/internal/cache"
+	"github.com/kubestrata/kubestrata/internal/snapshot"
 )
 
 func deployment(ns, name, image string, at time.Time) snapshot.Resource {

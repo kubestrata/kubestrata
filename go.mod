@@ -1,4 +1,4 @@
-module github.com/leosavio/kubestrata
+module github.com/kubestrata/kubestrata
 
 go 1.27.1
 

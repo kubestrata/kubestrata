@@ -7,7 +7,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
 
-	"github.com/leosavio/kubestrata/internal/cache"
+	"github.com/kubestrata/kubestrata/internal/cache"
 )
 
 func newCacheCmd(g *globals) *cobra.Command {

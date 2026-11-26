@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leosavio/kubestrata/internal/snapshot"
+	"github.com/kubestrata/kubestrata/internal/snapshot"
 )
 
 var t0 = time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
