@@ -2,7 +2,7 @@
 
 // Package e2e collects the two clusters of a running kuberito lab and compares the snapshots
 // with the lab's ground truth. Run with `make lab-test` after `kuberito up`
-// (https://github.com/leosavio/kuberito); tests skip when no lab is up.
+// (https://github.com/kuberito/kuberito); tests skip when no lab is up.
 package e2e
 
 import (
@@ -17,11 +17,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leosavio/kubestrata/internal/collect"
-	"github.com/leosavio/kubestrata/internal/compare"
-	"github.com/leosavio/kubestrata/internal/kube"
-	"github.com/leosavio/kubestrata/internal/render"
-	"github.com/leosavio/kubestrata/internal/snapshot"
+	"github.com/kubestrata/kubestrata/internal/collect"
+	"github.com/kubestrata/kubestrata/internal/compare"
+	"github.com/kubestrata/kubestrata/internal/kube"
+	"github.com/kubestrata/kubestrata/internal/render"
+	"github.com/kubestrata/kubestrata/internal/snapshot"
 )
 
 // Values the lab seeds on purpose; none may reach a snapshot.

@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/leosavio/kubestrata/internal/snapshot"
+	"github.com/kubestrata/kubestrata/internal/snapshot"
 )
 
 const (

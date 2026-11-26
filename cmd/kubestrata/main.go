@@ -6,7 +6,7 @@ import (
 	"os"
 	"runtime/debug"
 
-	"github.com/leosavio/kubestrata/internal/cli"
+	"github.com/kubestrata/kubestrata/internal/cli"
 )
 
 // version is set by the release build (-ldflags "-X main.version=vX.Y.Z").

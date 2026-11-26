@@ -16,7 +16,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/leosavio/kubestrata/internal/collect"
+	"github.com/kubestrata/kubestrata/internal/collect"
 )
 
 const pageSize = 500

@@ -16,7 +16,7 @@ tags: [agents, kubernetes, migration, inventory]
 
 ## O que é
 
-CLI em Go, MIT, repo `leosavio/kubestrata` (público desde 2026-11-20, ainda pré-release, para a
+CLI em Go, MIT, repo `kubestrata/kubestrata` (público desde 2026-11-20, ainda pré-release, para a
 validação no workshop AWS). Lê os contextos do kubeconfig, coleta inventário somente leitura e
 sanitizado para um cache local e gera site HTML offline: recursos recentes no centro, antigos na
 borda, setor por namespace/time, e comparação lado a lado de dois clusters para planejar migração.

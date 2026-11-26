@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leosavio/kubestrata/internal/compare"
-	"github.com/leosavio/kubestrata/internal/snapshot"
+	"github.com/kubestrata/kubestrata/internal/compare"
+	"github.com/kubestrata/kubestrata/internal/snapshot"
 )
 
 func fixture() *snapshot.Snapshot {

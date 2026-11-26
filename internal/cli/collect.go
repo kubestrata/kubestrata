@@ -16,10 +16,10 @@ import (
 	"charm.land/lipgloss/v2/table"
 	"github.com/spf13/cobra"
 
-	"github.com/leosavio/kubestrata/internal/cache"
-	"github.com/leosavio/kubestrata/internal/collect"
-	"github.com/leosavio/kubestrata/internal/kube"
-	"github.com/leosavio/kubestrata/internal/snapshot"
+	"github.com/kubestrata/kubestrata/internal/cache"
+	"github.com/kubestrata/kubestrata/internal/collect"
+	"github.com/kubestrata/kubestrata/internal/kube"
+	"github.com/kubestrata/kubestrata/internal/snapshot"
 )
 
 // maxParallelContexts caps how many clusters are listed at the same time.
