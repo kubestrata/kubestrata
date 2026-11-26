@@ -21,15 +21,15 @@ migração aparece como um anel no destino.
 
 ## Instalação
 
-Homebrew (macOS e Linux), pelo tap [`leosavio/homebrew-tap`](https://github.com/leosavio/homebrew-tap):
+Homebrew (macOS e Linux), pelo tap [`kubestrata/homebrew-tap`](https://github.com/kubestrata/homebrew-tap):
 
 ```sh
-brew install leosavio/tap/kubestrata
+brew install kubestrata/tap/kubestrata
 ```
 
 O Homebrew 7.0.11 em diante recusa fórmula de tap não oficial até ela ser confiada. Se o
 `brew install` parar com "Refusing to load formula ... from untrusted tap", rode
-`brew trust --formula leosavio/tap/kubestrata` e instale de novo.
+`brew trust --formula kubestrata/tap/kubestrata` e instale de novo.
 
 Com Go instalado (Go 1.27 ou mais novo). O binário fica em `$(go env GOPATH)/bin`, que precisa
 estar no seu `PATH`:
@@ -42,7 +42,7 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 Release (darwin/linux, arm64/amd64), com verificação de checksum e assinatura keyless:
 
 ```sh
-v=0.1.1; os=darwin; arch=arm64
+v=0.1.2; os=darwin; arch=arm64
 base="https://github.com/kubestrata/kubestrata/releases/download/v${v}"
 curl -fsSLO "${base}/kubestrata_${v}_${os}_${arch}.tar.gz"
 curl -fsSLO "${base}/checksums.txt"

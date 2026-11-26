@@ -36,7 +36,7 @@ Ferramenta de domínio com repo próprio, como o `costgate`.
 | TUI (F1) | Bubble Tea v2, Bubbles v2, Lip Gloss v2, Huh v2 (`charm.land/*`) | a implementar |
 | Site (F1) | HTML+CSS+JS inline (`web/`), zero CDN, canvas 2D, layout polar determinístico | `render` (um cluster) e `compare` (dois painéis, modo de cor `state`, tabela de cobertura); modelo de referência: `leosavio-org/knowledge/views/grafo.html` |
 | CI | GitHub Actions `.github/workflows/ci.yml` | lint (gofmt, vet incl. tag `lab`, staticcheck v0.8.2, cross-compile darwin/linux × arm64/amd64) e `go test -race`; sem job de lab (o e2e precisa do lab `kuberito`) |
-| Release | `.github/workflows/release.yml` (tag `v*`) | testes, binários darwin/linux × arm64/amd64, smoke do linux/amd64, `checksums.txt` assinado com cosign keyless, release no GitHub e `Formula/kubestrata.rb` no `leosavio/homebrew-tap` (deploy key só de escrita no tap, secret `HOMEBREW_TAP_DEPLOY_KEY`; pré-release não mexe no tap) |
+| Release | `.github/workflows/release.yml` (tag `v*`) | testes, binários darwin/linux × arm64/amd64, smoke do linux/amd64, `checksums.txt` assinado com cosign keyless, release no GitHub e `Formula/kubestrata.rb` no `kubestrata/homebrew-tap` (deploy key só de escrita no tap, secret `HOMEBREW_TAP_DEPLOY_KEY`; pré-release não mexe no tap) |
 | Smoke de instalação | `.github/workflows/install-smoke.yml` + `scripts/smoke-check.sh` | brew, `go install` e tarball assinado em 4 runners; depois de cada release, toda terça e por `workflow_dispatch` |
 
 Design completo: `docs/design.md`.
@@ -50,6 +50,8 @@ Sessão 2026-11-26: repo transferido para a org `kubestrata` (PR #8, caminho do 
 `install-smoke.yml`, `scripts/homebrew-formula.sh` e `scripts/smoke-check.sh`; README com seção
 Install (brew, `go install`, tarball verificado) e plataformas testadas; CHANGELOG 0.1.0. O
 install-smoke da 0.1.0 pegou o `go install` imprimindo `v0.1.0` no `--version`; a 0.1.1 tira o `v`.
+A 0.1.2 muda a fórmula para o tap da org (`kubestrata/homebrew-tap`, `brew install
+kubestrata/tap/kubestrata`); o `leosavio/tap` ficou com `tap_migrations.json` apontando para cá.
 Distribuição por PyPI/uv em avaliação (decisão aberta no workstream do leosavio-org).
 
 Validação 2 no workshop Spark on EKS (`aws-spark-on-eks-workshop/extra-02-avaliacao-ferramentas/kubestrata-avaliacao.md`,
@@ -122,7 +124,7 @@ verdade-base do lab: 0 divergência, 0 vazamento.
 - [ ] F1: TUI básica; teste de não vazamento sobre o site; golden de render
 - [ ] F2: parear tradução de kind (Route/Ingress → HTTPRoute) e PVs de nome gerado nas unidades de migração
 - [x] CONTRIBUTING, CODE_OF_CONDUCT, SECURITY e CHANGELOG (`e8c436f`); repo público desde 2026-11-20
-- [x] v0.1.0: release (2026-11-26), Homebrew `leosavio/tap/kubestrata`, `go install`, tarball assinado
+- [x] v0.1.0: release (2026-11-26), Homebrew `kubestrata/tap/kubestrata`, `go install`, tarball assinado
 
 ## Comandos essenciais
 

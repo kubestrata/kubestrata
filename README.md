@@ -21,15 +21,15 @@ shows up as a ring in the target.
 
 ## Install
 
-Homebrew (macOS and Linux), from the [`leosavio/homebrew-tap`](https://github.com/leosavio/homebrew-tap) tap:
+Homebrew (macOS and Linux), from the [`kubestrata/homebrew-tap`](https://github.com/kubestrata/homebrew-tap) tap:
 
 ```sh
-brew install leosavio/tap/kubestrata
+brew install kubestrata/tap/kubestrata
 ```
 
 Homebrew 7.0.11 and later refuse formulae from non-official taps until you trust them. If
 `brew install` stops with "Refusing to load formula ... from untrusted tap", run
-`brew trust --formula leosavio/tap/kubestrata` and install again.
+`brew trust --formula kubestrata/tap/kubestrata` and install again.
 
 Go toolchain (Go 1.27 or newer). The binary lands in `$(go env GOPATH)/bin`, which must be on your
 `PATH`:
@@ -42,7 +42,7 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 Release archive (darwin/linux, arm64/amd64), verifying the checksum and the keyless signature:
 
 ```sh
-v=0.1.1; os=darwin; arch=arm64
+v=0.1.2; os=darwin; arch=arm64
 base="https://github.com/kubestrata/kubestrata/releases/download/v${v}"
 curl -fsSLO "${base}/kubestrata_${v}_${os}_${arch}.tar.gz"
 curl -fsSLO "${base}/checksums.txt"
