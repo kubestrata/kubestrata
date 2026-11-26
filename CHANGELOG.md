@@ -3,6 +3,12 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org).
 
+## 0.1.1 — 2026-11-26
+
+- `kubestrata --version` prints the version without the leading `v` when installed with
+  `go install` too (`0.1.1`, not `v0.1.1`), the same string as the release archives and Homebrew.
+  Found by `install-smoke.yml` on 0.1.0, where the `go install` path printed `v0.1.0`.
+
 ## 0.1.0 — 2026-11-26
 
 First release.
