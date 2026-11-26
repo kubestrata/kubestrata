@@ -16,8 +16,8 @@ tags: [agents, kubernetes, migration, inventory]
 
 ## O que é
 
-CLI em Go, MIT, repo `kubestrata/kubestrata` (público desde 2026-11-20, ainda pré-release, para a
-validação no workshop AWS). Lê os contextos do kubeconfig, coleta inventário somente leitura e
+CLI em Go, MIT, repo `kubestrata/kubestrata` (público desde 2026-11-20; org própria e v0.1.0 desde
+2026-11-26). Lê os contextos do kubeconfig, coleta inventário somente leitura e
 sanitizado para um cache local e gera site HTML offline: recursos recentes no centro, antigos na
 borda, setor por namespace/time, e comparação lado a lado de dois clusters para planejar migração.
 Ferramenta de domínio com repo próprio, como o `costgate`.
@@ -36,12 +36,20 @@ Ferramenta de domínio com repo próprio, como o `costgate`.
 | TUI (F1) | Bubble Tea v2, Bubbles v2, Lip Gloss v2, Huh v2 (`charm.land/*`) | a implementar |
 | Site (F1) | HTML+CSS+JS inline (`web/`), zero CDN, canvas 2D, layout polar determinístico | `render` (um cluster) e `compare` (dois painéis, modo de cor `state`, tabela de cobertura); modelo de referência: `leosavio-org/knowledge/views/grafo.html` |
 | CI | GitHub Actions `.github/workflows/ci.yml` | lint (gofmt, vet incl. tag `lab`, staticcheck v0.8.2, cross-compile darwin/linux × arm64/amd64) e `go test -race`; sem job de lab (o e2e precisa do lab `kuberito`) |
+| Release | `.github/workflows/release.yml` (tag `v*`) | testes, binários darwin/linux × arm64/amd64, smoke do linux/amd64, `checksums.txt` assinado com cosign keyless, release no GitHub e `Formula/kubestrata.rb` no `leosavio/homebrew-tap` (deploy key só de escrita no tap, secret `HOMEBREW_TAP_DEPLOY_KEY`; pré-release não mexe no tap) |
+| Smoke de instalação | `.github/workflows/install-smoke.yml` + `scripts/smoke-check.sh` | brew, `go install` e tarball assinado em 4 runners; depois de cada release, toda terça e por `workflow_dispatch` |
 
 Design completo: `docs/design.md`.
 
 ## Estado atual (onde parei)
 
-> Última atualização: 2026-11-20 (validação 2 do workshop)
+> Última atualização: 2026-11-26 (org própria e release v0.1.0)
+
+Sessão 2026-11-26: repo transferido para a org `kubestrata` (PR #8, caminho do módulo
+`github.com/kubestrata/kubestrata`). Release v0.1.0 no mesmo padrão do `costgate`: `release.yml`,
+`install-smoke.yml`, `scripts/homebrew-formula.sh` e `scripts/smoke-check.sh`; README com seção
+Install (brew, `go install`, tarball verificado) e plataformas testadas; CHANGELOG 0.1.0.
+Distribuição por PyPI/uv em avaliação (decisão aberta no workstream do leosavio-org).
 
 Validação 2 no workshop Spark on EKS (`aws-spark-on-eks-workshop/extra-02-avaliacao-ferramentas/kubestrata-avaliacao.md`,
 build `ca851b5`): K1a–K1c, K3, K4 e K6 ok; o `diff` bate com o `snapdiff.sh` do workshop. K10: o
@@ -113,7 +121,7 @@ verdade-base do lab: 0 divergência, 0 vazamento.
 - [ ] F1: TUI básica; teste de não vazamento sobre o site; golden de render
 - [ ] F2: parear tradução de kind (Route/Ingress → HTTPRoute) e PVs de nome gerado nas unidades de migração
 - [x] CONTRIBUTING, CODE_OF_CONDUCT, SECURITY e CHANGELOG (`e8c436f`); repo público desde 2026-11-20
-- [ ] v0.1.0: release
+- [x] v0.1.0: release (2026-11-26), Homebrew `leosavio/tap/kubestrata`, `go install`, tarball assinado
 
 ## Comandos essenciais
 

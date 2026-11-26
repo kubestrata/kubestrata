@@ -6,7 +6,8 @@
 
 [English](README.md)
 
-> **Status: pré-release.** Em desenvolvimento rumo à v0.1.0. As interfaces podem mudar.
+> **Status: v0.1.0, primeira release.** As interfaces ainda podem mudar antes da 1.0
+> ([CHANGELOG](CHANGELOG.md)).
 
 Inventário de clusters Kubernetes em camadas de tempo, para planejar migração. O `kubestrata` lê
 os contextos do kubeconfig, coleta um inventário somente leitura e sanitizado num cache local e
@@ -18,26 +19,64 @@ migração aparece como um anel no destino.
 - Somente leitura: só `list` e `get`. Valores de Secret nunca saem do cluster.
 - HTML offline: abra o `index.html` gerado direto do disco.
 
-## Início rápido
+## Instalação
 
-Instale com `go install` (Go 1.27 ou mais novo). O binário fica em `$(go env GOPATH)/bin`, que
-precisa estar no seu `PATH`:
+Homebrew (macOS e Linux), pelo tap [`leosavio/homebrew-tap`](https://github.com/leosavio/homebrew-tap):
+
+```sh
+brew install leosavio/tap/kubestrata
+```
+
+O Homebrew 7.0.11 em diante recusa fórmula de tap não oficial até ela ser confiada. Se o
+`brew install` parar com "Refusing to load formula ... from untrusted tap", rode
+`brew trust --formula leosavio/tap/kubestrata` e instale de novo.
+
+Com Go instalado (Go 1.27 ou mais novo). O binário fica em `$(go env GOPATH)/bin`, que precisa
+estar no seu `PATH`:
 
 ```sh
 go install github.com/kubestrata/kubestrata/cmd/kubestrata@latest
 export PATH="$(go env GOPATH)/bin:$PATH"
 ```
 
-Ou compile a partir de um clone (o `make build` grava `bin/kubestrata`; o `export` põe o binário
-no `PATH` deste shell):
+Release (darwin/linux, arm64/amd64), com verificação de checksum e assinatura keyless:
 
 ```sh
-git clone https://github.com/kubestrata/kubestrata.git && cd kubestrata
-make build && export PATH="$PWD/bin:$PATH"
+v=0.1.0; os=darwin; arch=arm64
+base="https://github.com/kubestrata/kubestrata/releases/download/v${v}"
+curl -fsSLO "${base}/kubestrata_${v}_${os}_${arch}.tar.gz"
+curl -fsSLO "${base}/checksums.txt"
+curl -fsSLO "${base}/checksums.txt.sigstore.json"
+cosign verify-blob --bundle checksums.txt.sigstore.json \
+  --certificate-identity "https://github.com/kubestrata/kubestrata/.github/workflows/release.yml@refs/tags/v${v}" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt
+grep " kubestrata_${v}_${os}_${arch}.tar.gz\$" checksums.txt | shasum -a 256 -c -
+tar -xzf "kubestrata_${v}_${os}_${arch}.tar.gz" kubestrata
 ```
 
-Depois rode com um contexto de origem e um de destino do seu kubeconfig (o `kubestrata contexts`
-lista os contextos):
+No Linux, `sha256sum -c -` faz o mesmo que `shasum -a 256 -c -`. Para compilar a partir de um
+clone, o `make build` grava `bin/kubestrata`.
+
+### Plataformas testadas
+
+| Plataforma | Runner do GitHub | Smoke de instalação (`install-smoke.yml`) |
+|---|---|---|
+| linux/amd64 | `ubuntu-24.04` | brew · go install · tarball |
+| linux/arm64 | `ubuntu-24.04-arm` | brew · go install · tarball |
+| darwin/arm64 | `macos-15` | brew · go install · tarball |
+| darwin/amd64 | `macos-15-intel` | brew · go install · tarball |
+
+O [`install-smoke.yml`](.github/workflows/install-smoke.yml) instala uma release publicada como o
+usuário faria, depois de cada release, toda terça e sob demanda
+(`gh workflow run install-smoke.yml -f version=vX.Y.Z`). Em cada caminho de instalação ele confere
+que o `kubestrata --version` bate com a tag, que o `contexts` lê um kubeconfig de teste sem
+imprimir a credencial e que o `cache ls` funciona com o cache vazio
+([`scripts/smoke-check.sh`](scripts/smoke-check.sh)).
+
+## Início rápido
+
+Rode com um contexto de origem e um de destino do seu kubeconfig (o `kubestrata contexts` lista
+os contextos):
 
 ```sh
 kubestrata collect -c <origem> -c <destino>         # inventário somente leitura no cache local

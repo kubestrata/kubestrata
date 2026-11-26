@@ -3,9 +3,21 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org).
 
-## Unreleased
+## 0.1.0 — 2026-11-26
 
-No release yet. `main` has:
+First release.
+
+Distribution:
+
+- Release binaries for darwin/linux on arm64/amd64, `checksums.txt` signed with cosign keyless
+  (`release.yml`).
+- Homebrew: `brew install leosavio/tap/kubestrata` (formula published by the release workflow).
+- `go install github.com/kubestrata/kubestrata/cmd/kubestrata@v0.1.0`. The module path moved from
+  `github.com/leosavio/kubestrata` to `github.com/kubestrata/kubestrata` before this release.
+- `install-smoke.yml`: brew, go install and the signed archive on four platforms after every
+  release, weekly and on demand.
+
+Commands:
 
 - `kubestrata contexts`: kubeconfig contexts, no cluster access.
 - `kubestrata collect`: read-only, sanitized snapshot per context into the local cache, reused
@@ -49,3 +61,6 @@ Changes from the AWS workshop evaluation (EKS Auto Mode, Spark, Terraform):
   `ready`, `restarts`, `archs`, `pod_newest` and `pod_oldest`.
 - README quick start: `go install` puts the binary in `$(go env GOPATH)/bin`, which must be on
   `PATH`.
+- `diff` and `compare` between snapshots of different collector versions count as drift only the
+  facts present on both sides; the rest is listed as `collector_facts` (`collector_change` in JSON).
+- `collect --snapshot-out` without `--redact` prints a note on stderr in text mode.
