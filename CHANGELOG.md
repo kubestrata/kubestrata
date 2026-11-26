@@ -3,6 +3,14 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org).
 
+## 0.1.2 — 2026-11-26
+
+- Homebrew: the formula moved to the project's own tap, `brew install kubestrata/tap/kubestrata`
+  ([kubestrata/homebrew-tap](https://github.com/kubestrata/homebrew-tap)). 0.1.0 and 0.1.1 were
+  published in `leosavio/tap`, whose `tap_migrations.json` now points `kubestrata` to
+  `kubestrata/tap`. If you installed from there, the direct path is
+  `brew uninstall kubestrata && brew install kubestrata/tap/kubestrata`.
+
 ## 0.1.1 — 2026-11-26
 
 - `kubestrata --version` prints the version without the leading `v` when installed with

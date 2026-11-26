@@ -145,18 +145,18 @@ jobs:
             eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
           fi
           brew --version
-          brew tap leosavio/tap
+          brew tap kubestrata/tap
           # Recent Homebrew refuses formulae from non-official taps until trusted.
-          if brew trust --help >/dev/null 2>&1; then brew trust --formula leosavio/tap/kubestrata; fi
-          tap_version="$(brew info --json=v2 leosavio/tap/kubestrata | jq -r '.formulae[0].versions.stable')"
+          if brew trust --help >/dev/null 2>&1; then brew trust --formula kubestrata/tap/kubestrata; fi
+          tap_version="$(brew info --json=v2 kubestrata/tap/kubestrata | jq -r '.formulae[0].versions.stable')"
           if [ "$tap_version" != "$VERSION" ]; then
             if [ "$IS_LATEST" = true ]; then echo "tap serves $tap_version, want $VERSION"; exit 1; fi
             echo "::notice::tap serves $tap_version and $TAG is not the latest release: brew path skipped"
             echo "SKIP=1" >> "$GITHUB_ENV"
             exit 0
           fi
-          brew install leosavio/tap/kubestrata
-          brew test leosavio/tap/kubestrata
+          brew install kubestrata/tap/kubestrata
+          brew test kubestrata/tap/kubestrata
           echo "KUBESTRATA_BIN=$(brew --prefix)/bin/kubestrata" >> "$GITHUB_ENV"
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0

@@ -70,7 +70,7 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes-file - <<'EOF'
-          Binaries for darwin/linux on arm64/amd64. Install with `brew install leosavio/tap/kubestrata`
+          Binaries for darwin/linux on arm64/amd64. Install with `brew install kubestrata/tap/kubestrata`
           or `go install github.com/kubestrata/kubestrata/cmd/kubestrata@latest`. Changes: see
           [CHANGELOG.md](https://github.com/kubestrata/kubestrata/blob/main/CHANGELOG.md).
 
@@ -84,7 +84,7 @@ jobs:
           ```
           EOF
 
-      # Pushes Formula/kubestrata.rb to leosavio/homebrew-tap with a deploy key
+      # Pushes Formula/kubestrata.rb to kubestrata/homebrew-tap with a deploy key
       # that can write only to that repository.
       - name: update Homebrew tap
         env:
@@ -103,7 +103,7 @@ jobs:
           printf '%s\n' "$TAP_KEY" > "$key"
           curl -fsS https://api.github.com/meta | jq -r '.ssh_keys[] | "github.com " + .' > "$RUNNER_TEMP/known_hosts"
           export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o UserKnownHostsFile=$RUNNER_TEMP/known_hosts -o StrictHostKeyChecking=yes"
-          git clone -q git@github.com:leosavio/homebrew-tap.git "$RUNNER_TEMP/tap"
+          git clone -q git@github.com:kubestrata/homebrew-tap.git "$RUNNER_TEMP/tap"
           sh scripts/homebrew-formula.sh "$version" dist/checksums.txt > "$RUNNER_TEMP/tap/Formula/kubestrata.rb"
           cd "$RUNNER_TEMP/tap"
           git config user.name "github-actions[bot]"
