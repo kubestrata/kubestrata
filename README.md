@@ -6,7 +6,7 @@
 
 [Português](README.pt-BR.md)
 
-> **Status: v0.1.0, first release.** Interfaces may still change before 1.0
+> **Status: 0.1.x, first releases.** Interfaces may still change before 1.0
 > ([CHANGELOG](CHANGELOG.md)).
 
 Time-layered inventory of Kubernetes clusters for migration planning. `kubestrata` reads the
@@ -42,7 +42,7 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 Release archive (darwin/linux, arm64/amd64), verifying the checksum and the keyless signature:
 
 ```sh
-v=0.1.0; os=darwin; arch=arm64
+v=0.1.1; os=darwin; arch=arm64
 base="https://github.com/kubestrata/kubestrata/releases/download/v${v}"
 curl -fsSLO "${base}/kubestrata_${v}_${os}_${arch}.tar.gz"
 curl -fsSLO "${base}/checksums.txt"

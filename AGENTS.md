@@ -48,7 +48,8 @@ Design completo: `docs/design.md`.
 Sessão 2026-11-26: repo transferido para a org `kubestrata` (PR #8, caminho do módulo
 `github.com/kubestrata/kubestrata`). Release v0.1.0 no mesmo padrão do `costgate`: `release.yml`,
 `install-smoke.yml`, `scripts/homebrew-formula.sh` e `scripts/smoke-check.sh`; README com seção
-Install (brew, `go install`, tarball verificado) e plataformas testadas; CHANGELOG 0.1.0.
+Install (brew, `go install`, tarball verificado) e plataformas testadas; CHANGELOG 0.1.0. O
+install-smoke da 0.1.0 pegou o `go install` imprimindo `v0.1.0` no `--version`; a 0.1.1 tira o `v`.
 Distribuição por PyPI/uv em avaliação (decisão aberta no workstream do leosavio-org).
 
 Validação 2 no workshop Spark on EKS (`aws-spark-on-eks-workshop/extra-02-avaliacao-ferramentas/kubestrata-avaliacao.md`,
