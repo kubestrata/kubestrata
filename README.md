@@ -32,6 +32,14 @@ Homebrew 7.0.11 and later refuse formulae from non-official taps until you trust
 `brew install` stops with "Refusing to load formula ... from untrusted tap", run
 `brew trust --formula kubestrata/tap/kubestrata` and install again.
 
+PyPI (macOS 12+ and Linux, arm64/amd64), with [uv](https://docs.astral.sh/uv/) or pipx. The wheel
+carries the same signed Go binary as the release archive; there is no Python code:
+
+```sh
+uvx kubestrata --version        # run once, without installing
+uv tool install kubestrata      # or: pipx install kubestrata
+```
+
 Go toolchain (Go 1.27 or newer). The binary lands in `$(go env GOPATH)/bin`, which must be on your
 `PATH`:
 
@@ -43,7 +51,7 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 Release archive (darwin/linux, arm64/amd64), verifying the checksum and the keyless signature:
 
 ```sh
-v=0.1.3; os=darwin; arch=arm64
+v=0.1.4; os=darwin; arch=arm64
 base="https://github.com/kubestrata/kubestrata/releases/download/v${v}"
 curl -fsSLO "${base}/kubestrata_${v}_${os}_${arch}.tar.gz"
 curl -fsSLO "${base}/checksums.txt"
@@ -62,10 +70,10 @@ On Linux, `sha256sum -c -` does the same as `shasum -a 256 -c -`. To build from 
 
 | Platform | GitHub runner | Install smoke (`install-smoke.yml`) |
 |---|---|---|
-| linux/amd64 | `ubuntu-24.04` | brew · go install · tarball |
-| linux/arm64 | `ubuntu-24.04-arm` | brew · go install · tarball |
-| darwin/arm64 | `macos-15` | brew · go install · tarball |
-| darwin/amd64 | `macos-15-intel` | brew · go install · tarball |
+| linux/amd64 | `ubuntu-24.04` | brew · go install · tarball · uv |
+| linux/arm64 | `ubuntu-24.04-arm` | brew · go install · tarball · uv |
+| darwin/arm64 | `macos-15` | brew · go install · tarball · uv |
+| darwin/amd64 | `macos-15-intel` | brew · go install · tarball · uv |
 
 [`install-smoke.yml`](.github/workflows/install-smoke.yml) installs a published release the way a
 user does, after every release (dispatched by `release.yml`), every Tuesday and on demand

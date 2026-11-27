@@ -1,7 +1,7 @@
 name: install-smoke
 
 # Installs a published release the way a user would and checks it:
-# Homebrew tap, go install and the signed tarball, on Linux/macOS x amd64/arm64.
+# Homebrew tap, go install, the signed tarball and the PyPI wheel (uv), on Linux/macOS x amd64/arm64.
 # Each install runs scripts/smoke-check.sh (from the workflow ref): version, contexts on a
 # fixture kubeconfig without printing the credential, and an empty cache.
 #
@@ -75,7 +75,7 @@ jobs:
       matrix:
         # Runner labels: https://docs.github.com/en/actions/reference/runners/github-hosted-runners
         runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel]
-        method: [brew, go, tarball]
+        method: [brew, go, tarball, uv]
     env:
       TAG: ${{ needs.resolve.outputs.tag }}
       VERSION: ${{ needs.resolve.outputs.version }}
@@ -202,8 +202,45 @@ jobs:
           tar -xzf "$file" kubestrata
           echo "bin=$dir/kubestrata" >> "$GITHUB_OUTPUT"
 
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        if: matrix.method == 'uv'
+        with:
+          enable-cache: false
+
+      # Pre-releases (vX.Y.Z-rc.N) are published to TestPyPI only, final releases to PyPI.
+      # Releases before 0.1.4 were never on PyPI: skipped unless the tag is the latest release.
+      - id: uv
+        name: install (uv tool install)
+        if: matrix.method == 'uv'
+        run: |
+          set -eu
+          pep="$(printf '%s' "$VERSION" | sed -E 's/-(rc|a|b)\.?([0-9]+)$/\1\2/; s/-alpha\.?([0-9]+)$/a\1/; s/-beta\.?([0-9]+)$/b\1/')"
+          case "$VERSION" in
+            *-*) host=test.pypi.org ;;
+            *) host=pypi.org ;;
+          esac
+          found=0
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if curl -fsS -o /dev/null "https://${host}/pypi/kubestrata/${pep}/json"; then found=1; break; fi
+            [ "$IS_LATEST" = true ] || [ "$host" = test.pypi.org ] || break
+            echo "kubestrata ${pep} not on ${host} yet (try $i)"; sleep 30
+          done
+          if [ "$found" = 0 ]; then
+            if [ "$IS_LATEST" = true ] || [ "$host" = test.pypi.org ]; then echo "kubestrata ${pep} missing on ${host}"; exit 1; fi
+            echo "::notice::kubestrata ${pep} is not on ${host} (released before PyPI): uv path skipped"
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          export UV_TOOL_DIR="$RUNNER_TEMP/uvtools" UV_TOOL_BIN_DIR="$RUNNER_TEMP/uvbin"
+          for i in 1 2 3 4 5; do
+            if uv tool install --refresh --index-url "https://${host}/simple/" "kubestrata==${pep}"; then break; fi
+            [ "$i" = 5 ] && exit 1
+            echo "index not updated yet (try $i)"; sleep 30
+          done
+          echo "bin=$UV_TOOL_BIN_DIR/kubestrata" >> "$GITHUB_OUTPUT"
+
       - name: check
-        if: steps.brew.outputs.skip != '1'
+        if: steps.brew.outputs.skip != '1' && steps.uv.outputs.skip != '1'
         env:
-          BIN: ${{ steps.brew.outputs.bin || steps.go.outputs.bin || steps.tarball.outputs.bin }}
+          BIN: ${{ steps.brew.outputs.bin || steps.go.outputs.bin || steps.tarball.outputs.bin || steps.uv.outputs.bin }}
         run: sh ci/scripts/smoke-check.sh "$BIN" "$VERSION"

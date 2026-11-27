@@ -38,6 +38,7 @@ Ferramenta de domínio com repo próprio, como o `costgate`.
 | CI | GitHub Actions `.github/workflows/ci.yml` | lint (gofmt, vet incl. tag `lab`, staticcheck v0.8.2, cross-compile darwin/linux × arm64/amd64) e `go test -race`; sem job de lab (o e2e precisa do lab `kuberito`) |
 | Release | `.github/workflows/release.yml` (tag `v*`) | testes, binários darwin/linux × arm64/amd64, smoke do linux/amd64, `checksums.txt` assinado com cosign keyless, release no GitHub e `Formula/kubestrata.rb` no `kubestrata/homebrew-tap` (deploy key só de escrita no tap, secret `HOMEBREW_TAP_DEPLOY_KEY`; pré-release não mexe no tap) |
 | Smoke de instalação | `.github/workflows/install-smoke.yml` + `scripts/smoke-check.sh` | brew, `go install` e tarball assinado em 4 runners; disparado pelo último job do `release.yml` (`workflow_dispatch`), toda terça e à mão |
+| PyPI | job `pypi` do `release.yml` + `scripts/build-wheels.py` | wheel por plataforma com o binário do archive assinado (cosign e checksum conferidos antes); Trusted Publishing da conta `leosavio`, environments `testpypi` (tag com `-`) e `pypi` (tag final), só tags `v*` |
 | Segurança | `.github/workflows/security.yml`, `.github/dependabot.yml`, settings do repo | `govulncheck` v1.10.0 (falha com vulnerabilidade alcançável; semanal) e `zizmor` 1.33.1 nos workflows; Dependabot (gomod, actions), alertas e security updates; secret scanning + push protection; CodeQL default setup |
 
 Design completo: `docs/design.md`.
