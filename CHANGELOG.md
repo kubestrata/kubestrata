@@ -3,6 +3,23 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org).
 
+## 0.1.3 — 2026-11-26
+
+Security:
+
+- Built with Go 1.27.4 (was 1.27.1). `govulncheck` found 11 vulnerabilities of the standard
+  library reachable from kubestrata in 0.1.0–0.1.2, in `net/http`, the HTTP/2 client,
+  `crypto/tls`, `crypto/x509` and `net/textproto` (GO-2026-6859, GO-2026-6809, GO-2026-6617,
+  GO-2026-6613, GO-2026-6612, GO-2026-6611, GO-2026-6610, GO-2026-6608, GO-2026-6607,
+  GO-2026-6605, GO-2026-6603), fixed in Go 1.27.2 to 1.27.4. Upgrade from 0.1.2 or earlier.
+- `golang.org/x/net` v0.62.0 (was v0.57.0), with `x/sync`, `x/sys`, `x/term` and `x/text` updated
+  by `go mod tidy`. `govulncheck -show verbose` now reports no vulnerability, reachable or not.
+- `security.yml`: `govulncheck` on every change and weekly, failing when the code reaches a known
+  vulnerability; `zizmor` audit of the workflows. Dependabot for Go modules and GitHub Actions.
+- `install-smoke.yml` starts from a `workflow_dispatch` sent by the last job of `release.yml`
+  instead of `workflow_run`, and passes values through step outputs instead of `GITHUB_ENV`
+  (zizmor `dangerous-triggers` and `github-env`).
+
 ## 0.1.2 — 2026-11-26
 
 - Homebrew: the formula moved to the project's own tap, `brew install kubestrata/tap/kubestrata`

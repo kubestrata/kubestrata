@@ -42,7 +42,7 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 Release (darwin/linux, arm64/amd64), com verificação de checksum e assinatura keyless:
 
 ```sh
-v=0.1.2; os=darwin; arch=arm64
+v=0.1.3; os=darwin; arch=arm64
 base="https://github.com/kubestrata/kubestrata/releases/download/v${v}"
 curl -fsSLO "${base}/kubestrata_${v}_${os}_${arch}.tar.gz"
 curl -fsSLO "${base}/checksums.txt"
@@ -67,7 +67,7 @@ clone, o `make build` grava `bin/kubestrata`.
 | darwin/amd64 | `macos-15-intel` | brew · go install · tarball |
 
 O [`install-smoke.yml`](.github/workflows/install-smoke.yml) instala uma release publicada como o
-usuário faria, depois de cada release, toda terça e sob demanda
+usuário faria, depois de cada release (disparado pelo `release.yml`), toda terça e sob demanda
 (`gh workflow run install-smoke.yml -f version=vX.Y.Z`). Em cada caminho de instalação ele confere
 que o `kubestrata --version` bate com a tag, que o `contexts` lê um kubeconfig de teste sem
 imprimir a credencial e que o `cache ls` funciona com o cache vazio

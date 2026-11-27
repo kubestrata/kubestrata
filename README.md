@@ -42,7 +42,7 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 Release archive (darwin/linux, arm64/amd64), verifying the checksum and the keyless signature:
 
 ```sh
-v=0.1.2; os=darwin; arch=arm64
+v=0.1.3; os=darwin; arch=arm64
 base="https://github.com/kubestrata/kubestrata/releases/download/v${v}"
 curl -fsSLO "${base}/kubestrata_${v}_${os}_${arch}.tar.gz"
 curl -fsSLO "${base}/checksums.txt"
@@ -67,7 +67,7 @@ On Linux, `sha256sum -c -` does the same as `shasum -a 256 -c -`. To build from 
 | darwin/amd64 | `macos-15-intel` | brew · go install · tarball |
 
 [`install-smoke.yml`](.github/workflows/install-smoke.yml) installs a published release the way a
-user does, after every release, every Tuesday and on demand
+user does, after every release (dispatched by `release.yml`), every Tuesday and on demand
 (`gh workflow run install-smoke.yml -f version=vX.Y.Z`). For each install path it checks that
 `kubestrata --version` matches the tag, that `contexts` reads a fixture kubeconfig without
 printing the credential, and that `cache ls` works on an empty cache

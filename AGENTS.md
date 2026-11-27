@@ -37,7 +37,8 @@ Ferramenta de domínio com repo próprio, como o `costgate`.
 | Site (F1) | HTML+CSS+JS inline (`web/`), zero CDN, canvas 2D, layout polar determinístico | `render` (um cluster) e `compare` (dois painéis, modo de cor `state`, tabela de cobertura); modelo de referência: `leosavio-org/knowledge/views/grafo.html` |
 | CI | GitHub Actions `.github/workflows/ci.yml` | lint (gofmt, vet incl. tag `lab`, staticcheck v0.8.2, cross-compile darwin/linux × arm64/amd64) e `go test -race`; sem job de lab (o e2e precisa do lab `kuberito`) |
 | Release | `.github/workflows/release.yml` (tag `v*`) | testes, binários darwin/linux × arm64/amd64, smoke do linux/amd64, `checksums.txt` assinado com cosign keyless, release no GitHub e `Formula/kubestrata.rb` no `kubestrata/homebrew-tap` (deploy key só de escrita no tap, secret `HOMEBREW_TAP_DEPLOY_KEY`; pré-release não mexe no tap) |
-| Smoke de instalação | `.github/workflows/install-smoke.yml` + `scripts/smoke-check.sh` | brew, `go install` e tarball assinado em 4 runners; depois de cada release, toda terça e por `workflow_dispatch` |
+| Smoke de instalação | `.github/workflows/install-smoke.yml` + `scripts/smoke-check.sh` | brew, `go install` e tarball assinado em 4 runners; disparado pelo último job do `release.yml` (`workflow_dispatch`), toda terça e à mão |
+| Segurança | `.github/workflows/security.yml`, `.github/dependabot.yml`, settings do repo | `govulncheck` v1.10.0 (falha com vulnerabilidade alcançável; semanal) e `zizmor` 1.33.1 nos workflows; Dependabot (gomod, actions), alertas e security updates; secret scanning + push protection; CodeQL default setup |
 
 Design completo: `docs/design.md`.
 
@@ -52,6 +53,9 @@ Install (brew, `go install`, tarball verificado) e plataformas testadas; CHANGEL
 install-smoke da 0.1.0 pegou o `go install` imprimindo `v0.1.0` no `--version`; a 0.1.1 tira o `v`.
 A 0.1.2 muda a fórmula para o tap da org (`kubestrata/homebrew-tap`, `brew install
 kubestrata/tap/kubestrata`); o `leosavio/tap` ficou com `tap_migrations.json` apontando para cá.
+A 0.1.3 é de segurança: Go 1.27.1 → 1.27.4 (11 vulnerabilidades da stdlib alcançáveis pelo
+`govulncheck`) e `golang.org/x/net` v0.62.0, mais `security.yml`, Dependabot e o install-smoke sem
+`workflow_run`/`GITHUB_ENV` (zizmor 0 achados).
 Distribuição por PyPI/uv em avaliação (decisão aberta no workstream do leosavio-org).
 
 Validação 2 no workshop Spark on EKS (`aws-spark-on-eks-workshop/extra-02-avaliacao-ferramentas/kubestrata-avaliacao.md`,

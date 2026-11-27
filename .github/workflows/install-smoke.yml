@@ -6,17 +6,16 @@ name: install-smoke
 # fixture kubeconfig without printing the credential, and an empty cache.
 #
 # Triggers:
-# - workflow_run after release.yml succeeds. A release created by release.yml
-#   with GITHUB_TOKEN does not emit a `release` event to other workflows, and
-#   the tap is updated only at the end of that run.
+# - workflow_dispatch from the last job of release.yml, once the tap is updated. A release
+#   created with GITHUB_TOKEN emits no `release` event to other workflows; a dispatch does.
+#   (No workflow_run trigger: zizmor flags it as dangerous-triggers.)
 # - release: published, for a release created by a person.
 # - weekly, against the latest release (catches tap, proxy or image drift).
-# - workflow_dispatch with a version (default: latest release).
+# - workflow_dispatch by hand with a version (default: latest release).
+#
+# Steps pass values through step outputs, never GITHUB_ENV (zizmor github-env).
 
 on:
-  workflow_run:
-    workflows: [release]
-    types: [completed]
   release:
     types: [published]
   schedule:
@@ -32,12 +31,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: install-smoke-${{ github.event.release.tag_name || github.event.workflow_run.head_branch || inputs.version || 'latest' }}
+  group: install-smoke-${{ github.event.release.tag_name || inputs.version || 'latest' }}
   cancel-in-progress: false
 
 jobs:
   resolve:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -50,13 +48,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-          RUN_TAG: ${{ github.event.workflow_run.head_branch }}
           INPUT: ${{ inputs.version }}
         run: |
           set -eu
           case "$EVENT" in
             release) tag="$RELEASE_TAG" ;;
-            workflow_run) tag="$RUN_TAG" ;;
             *) tag="${INPUT:-latest}" ;;
           esac
           latest="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
@@ -103,7 +99,8 @@ jobs:
           path: src
           persist-credentials: false
 
-      - name: platform
+      - id: platform
+        name: platform
         run: |
           set -eu
           os="$(uname -s | tr '[:upper:]' '[:lower:]')"
@@ -115,19 +112,18 @@ jobs:
           if [ "$os" = darwin ]; then
             translated="$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)"
             [ "$translated" = 0 ] || { echo "running under Rosetta"; exit 1; }
-            echo "SHA256_CHECK=shasum -a 256 -c -" >> "$GITHUB_ENV"
-          else
-            echo "SHA256_CHECK=sha256sum -c -" >> "$GITHUB_ENV"
           fi
           echo "platform $os/$arch"
-          { echo "PLATFORM=${os}_${arch}"; echo "OS=$os"; } >> "$GITHUB_ENV"
+          { echo "platform=${os}_${arch}"; echo "os=$os"; } >> "$GITHUB_OUTPUT"
 
       # Homebrew is preinstalled on the macOS images and on ubuntu-24.04
       # (/home/linuxbrew, off PATH). Elsewhere it is installed from a pinned
       # commit of Homebrew/install with the script checksum verified.
-      - name: install (brew)
+      - id: brew
+        name: install (brew)
         if: matrix.method == 'brew'
         env:
+          OS: ${{ steps.platform.outputs.os }}
           BREW_INSTALL_SHA: d6a2423c5973e04b45a5f17dc1948f6c9e5e651a # Homebrew/install HEAD 2026-11-03
           BREW_INSTALL_SUM: 5f333bbe53bc490e51e7ccb1df8779b3dd6ee73a1a7379efda216edb08ccb148
         run: |
@@ -152,12 +148,12 @@ jobs:
           if [ "$tap_version" != "$VERSION" ]; then
             if [ "$IS_LATEST" = true ]; then echo "tap serves $tap_version, want $VERSION"; exit 1; fi
             echo "::notice::tap serves $tap_version and $TAG is not the latest release: brew path skipped"
-            echo "SKIP=1" >> "$GITHUB_ENV"
+            echo "skip=1" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           brew install kubestrata/tap/kubestrata
           brew test kubestrata/tap/kubestrata
-          echo "KUBESTRATA_BIN=$(brew --prefix)/bin/kubestrata" >> "$GITHUB_ENV"
+          echo "bin=$(brew --prefix)/bin/kubestrata" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         if: matrix.method == 'go'
@@ -165,22 +161,26 @@ jobs:
           go-version-file: src/go.mod
           cache: false
 
-      - name: install (go install)
+      - id: go
+        name: install (go install)
         if: matrix.method == 'go'
         run: |
           set -eu
           export GOBIN="$RUNNER_TEMP/gobin"
           cd "$RUNNER_TEMP"
           go install "github.com/kubestrata/kubestrata/cmd/kubestrata@${TAG}"
-          echo "KUBESTRATA_BIN=$GOBIN/kubestrata" >> "$GITHUB_ENV"
+          echo "bin=$GOBIN/kubestrata" >> "$GITHUB_OUTPUT"
 
       - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
         if: matrix.method == 'tarball'
         with:
           cosign-release: v3.1.4
 
-      - name: install (tarball + checksum + cosign)
+      - id: tarball
+        name: install (tarball + checksum + cosign)
         if: matrix.method == 'tarball'
+        env:
+          PLATFORM: ${{ steps.platform.outputs.platform }}
         run: |
           set -eu
           dir="$RUNNER_TEMP/release"
@@ -194,10 +194,16 @@ jobs:
             --certificate-identity "https://github.com/kubestrata/kubestrata/.github/workflows/release.yml@refs/tags/${TAG}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt
           line="$(grep " ${file}\$" checksums.txt)"
-          echo "$line" | $SHA256_CHECK
+          if command -v sha256sum >/dev/null; then
+            echo "$line" | sha256sum -c -
+          else
+            echo "$line" | shasum -a 256 -c -
+          fi
           tar -xzf "$file" kubestrata
-          echo "KUBESTRATA_BIN=$dir/kubestrata" >> "$GITHUB_ENV"
+          echo "bin=$dir/kubestrata" >> "$GITHUB_OUTPUT"
 
       - name: check
-        if: env.SKIP != '1'
-        run: sh ci/scripts/smoke-check.sh "$KUBESTRATA_BIN" "$VERSION"
+        if: steps.brew.outputs.skip != '1'
+        env:
+          BIN: ${{ steps.brew.outputs.bin || steps.go.outputs.bin || steps.tarball.outputs.bin }}
+        run: sh ci/scripts/smoke-check.sh "$BIN" "$VERSION"
