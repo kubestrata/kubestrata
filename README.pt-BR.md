@@ -1,6 +1,7 @@
 # kubestrata
 
 [![CI](https://github.com/kubestrata/kubestrata/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kubestrata/kubestrata/actions/workflows/ci.yml?query=branch%3Amain)
+[![security](https://github.com/kubestrata/kubestrata/actions/workflows/security.yml/badge.svg?branch=main)](docs/security-analysis.pt-BR.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 [![Go 1.27](https://img.shields.io/badge/go-1.27-00ADD8)](go.mod)
 
@@ -139,6 +140,20 @@ na saída):
 
 Cobertura por namespace = (equal + drift) / recursos na origem. Os namespaces de sistema ficam fora
 dos totais.
+
+## Segurança
+
+- Somente leitura por construção: as credenciais do kubeconfig são usadas, nunca guardadas nem
+  impressas, e os Secrets são lidos só como metadados ([SECURITY.md](SECURITY.md)).
+- A cada mudança e toda semana: `govulncheck`, `zizmor`, CodeQL, Dependabot e secret scanning.
+- Última análise, 2026-11-27 na 0.1.3: nenhuma vulnerabilidade conhecida alcançável pelo código ou
+  presente no binário publicado, e nenhum alerta aberto. As versões 0.1.0 a 0.1.2 foram compiladas
+  com Go 1.27.1 e têm 11 vulnerabilidades da biblioteca padrão: atualize para a 0.1.3 ou mais nova.
+
+Checagens, histórico de achados e como repeti-las numa release:
+[docs/security-analysis.pt-BR.md](docs/security-analysis.pt-BR.md) (versão oficial em inglês:
+[docs/security-analysis.md](docs/security-analysis.md)). Para reportar uma vulnerabilidade, veja o
+[SECURITY.md](SECURITY.md).
 
 ## Design
 

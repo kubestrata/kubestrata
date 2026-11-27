@@ -23,6 +23,17 @@ values. Use it for screenshots, shared terminals and files you hand over. It doe
 namespaces, resource names, images outside ECR or labels: review a site before publishing it. Details:
 [docs/design.md](docs/design.md#redaction---redact).
 
+## Supported versions
+
+Fixes go to the latest release only. Versions 0.1.0 to 0.1.2 were built with Go 1.27.1 and carry
+standard-library vulnerabilities fixed in 0.1.3.
+
+## Automated checks
+
+`govulncheck`, `zizmor`, CodeQL, Dependabot and secret scanning run on every change and weekly. The
+list of checks, the findings so far and how to repeat them on a release are in
+[docs/security-analysis.md](docs/security-analysis.md).
+
 ## Reporting a vulnerability
 
 Use GitHub's private vulnerability reporting on this repository (**Security** → **Report a
