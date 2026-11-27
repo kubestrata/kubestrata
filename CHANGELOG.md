@@ -3,8 +3,15 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org).
 
-## Unreleased
+## 0.1.4 — 2026-11-27
 
+- PyPI: `uvx kubestrata`, `uv tool install kubestrata`, `pipx install kubestrata`. One wheel per
+  platform (macOS 12+ and Linux glibc/musl, arm64/amd64) with the binary of the signed release
+  archive in `kubestrata-<version>.data/scripts/`, built by `scripts/build-wheels.py` (standard
+  library, reproducible) after verifying the cosign signature and the checksums. Published by
+  Trusted Publishing from the `pypi` environment (no stored token), with PEP 740 attestations;
+  pre-release tags (`vX.Y.Z-rc.N`) go to TestPyPI only and are marked as pre-release on GitHub.
+- `install-smoke.yml` installs with `uv tool install` too (16 jobs).
 - Docs: [docs/security-analysis.md](docs/security-analysis.md) (EN/PT-BR) lists the security
   checks, the findings of 0.1.2 and 0.1.3 and how to repeat the checks on a release; README
   Security section and badge; SECURITY.md with supported versions.

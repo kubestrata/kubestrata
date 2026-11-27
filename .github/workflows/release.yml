@@ -69,9 +69,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes-file - <<'EOF'
-          Binaries for darwin/linux on arm64/amd64. Install with `brew install kubestrata/tap/kubestrata`
-          or `go install github.com/kubestrata/kubestrata/cmd/kubestrata@latest`. Changes: see
+          pre=""
+          case "$TAG" in *-*) pre="--prerelease" ;; esac
+          # shellcheck disable=SC2086 # $pre is empty or one flag
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --title "$TAG" $pre --notes-file - <<'EOF'
+          Binaries for darwin/linux on arm64/amd64. Install with `brew install kubestrata/tap/kubestrata`,
+          `uv tool install kubestrata` (or `uvx kubestrata`, `pipx install kubestrata`) or
+          `go install github.com/kubestrata/kubestrata/cmd/kubestrata@latest`. Changes: see
           [CHANGELOG.md](https://github.com/kubestrata/kubestrata/blob/main/CHANGELOG.md).
 
           Verify an archive before use:
@@ -114,10 +118,65 @@ jobs:
           git push -q origin main
           rm -f "$key"
 
-  # A release created with GITHUB_TOKEN emits no `release` event to other workflows, but a
-  # workflow_dispatch does: start install-smoke.yml for this tag once the tap is updated.
-  install-smoke:
+  # Wheels for PyPI, one per platform, each with the binary of the signed archive (no Python
+  # code). Trusted Publishing: no token is stored; PyPI trusts this workflow and environment.
+  # A pre-release tag (vX.Y.Z-rc.N) goes to TestPyPI only, a final tag to PyPI.
+  pypi:
     needs: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: ${{ contains(github.ref_name, '-') && 'testpypi' || 'pypi' }}
+      url: ${{ contains(github.ref_name, '-') && 'https://test.pypi.org/project/kubestrata/' || 'https://pypi.org/project/kubestrata/' }}
+    permissions:
+      contents: read # download the release assets
+      id-token: write # Trusted Publishing (OIDC) and PEP 740 attestations
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with:
+          cosign-release: v3.1.4
+
+      - name: download and verify the release archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          mkdir -p rel
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir rel \
+            --pattern 'kubestrata_*.tar.gz' --pattern checksums.txt --pattern checksums.txt.sigstore.json
+          cosign verify-blob --bundle rel/checksums.txt.sigstore.json \
+            --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${TAG}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com rel/checksums.txt
+
+      - name: build wheels
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" python3 scripts/build-wheels.py "$TAG" rel wheels
+
+      - name: publish to TestPyPI
+        if: contains(github.ref_name, '-')
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          packages-dir: wheels
+          repository-url: https://test.pypi.org/legacy/
+
+      - name: publish to PyPI
+        if: ${{ !contains(github.ref_name, '-') }}
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          packages-dir: wheels
+
+  # A release created with GITHUB_TOKEN emits no `release` event to other workflows, but a
+  # workflow_dispatch does: start install-smoke.yml for this tag once the tap and PyPI are updated.
+  install-smoke:
+    needs: [release, pypi]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
