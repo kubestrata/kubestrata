@@ -3,6 +3,12 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org).
 
+## Unreleased
+
+- Docs: [docs/security-analysis.md](docs/security-analysis.md) (EN/PT-BR) lists the security
+  checks, the findings of 0.1.2 and 0.1.3 and how to repeat the checks on a release; README
+  Security section and badge; SECURITY.md with supported versions.
+
 ## 0.1.3 — 2026-11-26
 
 Security:
