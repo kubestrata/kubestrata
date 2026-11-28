@@ -471,6 +471,16 @@ func TestManagerVocabulary(t *testing.T) {
 			[]metav1.ManagedFieldsEntry{e("eks", t1)}, false, MgrArgoCD},
 		{"custom resource owner wins over platform", nil, []metav1.ManagedFieldsEntry{e("eks-auto-mode", t1)}, true, MgrOperator},
 		{"unknown tool", nil, []metav1.ManagedFieldsEntry{e("pulumi-kubernetes", t1)}, false, MgrOther},
+		{"kapp", nil, []metav1.ManagedFieldsEntry{e("kapp", t1)}, false, MgrKapp},
+		{"kapp-controller", nil, []metav1.ManagedFieldsEntry{e("kapp-controller", t1)}, false, MgrKapp},
+		{"kapp label wins over helm", map[string]string{"kapp.k14s.io/app": "1690000000", "app.kubernetes.io/managed-by": "Helm"},
+			[]metav1.ManagedFieldsEntry{e("kapp", t1)}, false, MgrKapp},
+		{"kappa is not kapp", nil, []metav1.ManagedFieldsEntry{e("kappa", t1)}, false, MgrOther},
+		{"web console", nil, []metav1.ManagedFieldsEntry{e("Mozilla", t1)}, false, MgrConsole},
+		{"created by kubectl, edited in the console", nil, []metav1.ManagedFieldsEntry{e("kubectl-create", t1), e("Mozilla", t2)},
+			false, MgrKubectl},
+		{"created in the console, then kubectl", nil, []metav1.ManagedFieldsEntry{e("Mozilla", t1), e("kubectl-edit", t2)},
+			false, MgrConsole},
 		{"no data", nil, nil, false, MgrUnknown},
 	}
 	for _, c := range cases {
@@ -751,5 +761,27 @@ func TestSkipSecrets(t *testing.T) {
 	}
 	if _, err := Collect(context.Background(), loadFake(t), Options{SkipKinds: []string{"a/b/c"}}); err == nil {
 		t.Error("bad --skip-kinds entry accepted")
+	}
+}
+
+// An unknown tool keeps its raw field manager name (manager_raw), volatile, for the page's list
+// of what "other" holds (K15).
+func TestManagerRaw(t *testing.T) {
+	src := smallSource(map[APIResource][]unstructured.Unstructured{
+		resourceOf["apps/Deployment"]: {obj("apps/v1", "Deployment", "ns-a", "web", "pulumi-kubernetes", nil, nil),
+			obj("apps/v1", "Deployment", "ns-a", "api", "kubectl-client-side-apply", nil, nil)},
+	})
+	snap, err := Collect(context.Background(), src, Options{Context: "lab", ToolVersion: "test", Now: fixedNow})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if web := find(t, snap, "apps/Deployment/ns-a/web"); web.Manager != MgrOther || web.Facts["manager_raw"] != "pulumi-kubernetes" {
+		t.Errorf("web: %s %v", web.Manager, web.Facts)
+	}
+	if api := find(t, snap, "apps/Deployment/ns-a/api"); api.Facts["manager_raw"] != nil {
+		t.Errorf("manager_raw on a known manager: %v", api.Facts)
+	}
+	if !Volatile("manager_raw") {
+		t.Error("manager_raw enters the fingerprint")
 	}
 }

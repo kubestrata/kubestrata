@@ -26,13 +26,15 @@
   var CATS = ["workload", "network", "config", "storage", "policy", "crd"];
   var CAT_COLOR = { workload: "#4fc3f7", network: "#ba68c8", config: "#ffd54f", storage: "#81c784",
     policy: "#ff8a65", crd: "#90a4ae" };
-  var MGR = ["argocd", "flux", "helm", "terraform", "operator", "kubectl", "platform", "other", "unknown"];
-  var MGR_COLOR = { argocd: "#ff9800", flux: "#5c6bc0", helm: "#26a69a", terraform: "#c0ca33", operator: "#ab47bc",
-    kubectl: "#ef5350", platform: "#8d6e63", other: "#9e9e9e", unknown: "#616161" };
+  var MGR = ["argocd", "flux", "helm", "kapp", "terraform", "operator", "kubectl", "console", "platform", "other", "unknown"];
+  var MGR_COLOR = { argocd: "#ff9800", flux: "#5c6bc0", helm: "#26a69a", kapp: "#00acc1", terraform: "#c0ca33",
+    operator: "#ab47bc", kubectl: "#ef5350", console: "#ec407a", platform: "#8d6e63", other: "#9e9e9e", unknown: "#616161" };
   var MGR_HINT = { argocd: "GitOps: re-target the destination", flux: "GitOps: re-target the destination",
     helm: "reinstall the release in the target", terraform: "IaC: re-target the Terraform code to the new cluster",
+    kapp: "Carvel kapp: deploy the same kapp app (or kapp-controller App) to the target",
     operator: "migrate the custom resource, not its children",
     kubectl: "applied by hand: export, clean, move to Git",
+    console: "edited in a web console: a manual change, review and codify it before migrating",
     platform: "created by the cluster platform: recreated by the target platform, do not migrate",
     other: "unknown tool: check managedFields", unknown: "no manager data" };
   // a volume the platform provisioned holds data: the target recreates the object, the data must move
@@ -636,9 +638,17 @@
       if (skippedOf(s).length) row(t, "skipped kinds", skippedOf(s).join(", ") + " (collect --skip-kinds, --no-secrets)", "eol");
       box.appendChild(t);
       box.appendChild(el("h3", null, "managers"));
-      var mt = el("table"), mc = {};
-      m.nodes.forEach(function (x) { if (visible(x)) mc[x.r.manager] = (mc[x.r.manager] || 0) + 1; });
+      var mt = el("table"), mc = {}, raw = {};
+      m.nodes.forEach(function (x) {
+        if (!visible(x)) return;
+        mc[x.r.manager] = (mc[x.r.manager] || 0) + 1;
+        var rn = x.r.manager === "other" && x.r.facts && x.r.facts.manager_raw;
+        if (rn) raw[rn] = (raw[rn] || 0) + 1;
+      });
       MGR.forEach(function (k) { if (mc[k]) row(mt, k + " (" + mc[k] + ")", MGR_HINT[k]); });
+      // the tools behind "other", by the field manager that created the objects
+      var top = Object.keys(raw).sort(function (a, b) { return raw[b] - raw[a] || (a < b ? -1 : 1); }).slice(0, 5);
+      if (top.length) row(mt, "other, top field managers", top.map(function (k) { return k + " (" + raw[k] + ")"; }).join(", "));
       box.appendChild(mt);
       errors(box, s, "collection errors");
       box.appendChild(el("p", { class: "empty" }, "Click a resource for details. Drag to pan, scroll to zoom, double-click to reset."));

@@ -204,9 +204,11 @@ EKS Auto Mode grava defaults nos NodePools que o Terraform cria).
 | helm | labels, annotations, Secrets de release do Helm | reinstall the release in the target |
 | terraform | field managers `HashiCorp` (providers kubernetes e kubectl), `Terraform` (server-side apply), `terraform-provider-*` | IaC: re-target the Terraform code to the new cluster |
 | operator | o dono controlador é um recurso customizado | migrate the custom resource, not its children |
+| kapp | label `kapp.k14s.io/app`; field managers `kapp`, `kapp-controller` (Carvel) | Carvel kapp: deploy the same kapp app (or kapp-controller App) to the target |
 | kubectl | `kubectl*` | applied by hand: export, clean, move to Git |
+| console | field managers que começam com `Mozilla`: o API server dá ao field manager o nome do user agent, então uma edição no console web do OpenShift (ou outro) chega como `Mozilla` | edited in a web console: a manual change, review and codify it before migrating |
 | platform | `eks`, `eks-auto-mode`, `eks-internal`, `kubeadm`, `cluster-version-operator` e os managers do control plane acima quando são os únicos que escreveram | recreated by the target platform, do not migrate (num PV ou PVC: o objeto é recriado, mova os dados) |
-| other | qualquer outro field manager (listado em `facts.field_managers`) | unknown tool: check managedFields |
+| other | qualquer outro field manager (listado em `facts.field_managers`; o que criou o objeto em `facts.manager_raw`, e a página lista os cinco mais comuns) | unknown tool: check managedFields |
 | unknown | sem `managedFields` | no manager data |
 
 O Argo CD pode rastrear o que implanta por um label (`argocd.argoproj.io/instance`, ou o label que

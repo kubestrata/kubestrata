@@ -201,9 +201,11 @@ NodePools Terraform creates).
 | helm | labels, annotations, Helm release Secrets | reinstall the release in the target |
 | terraform | field managers `HashiCorp` (kubernetes and kubectl providers), `Terraform` (server-side apply), `terraform-provider-*` | IaC: re-target the Terraform code to the new cluster |
 | operator | controller owner is a custom resource | migrate the custom resource, not its children |
+| kapp | label `kapp.k14s.io/app`; field managers `kapp`, `kapp-controller` (Carvel) | Carvel kapp: deploy the same kapp app (or kapp-controller App) to the target |
 | kubectl | `kubectl*` | applied by hand: export, clean, move to Git |
+| console | field managers starting with `Mozilla`: the API server names a field manager after the user agent, so an edit in the OpenShift (or another) web console arrives as `Mozilla` | edited in a web console: a manual change, review and codify it before migrating |
 | platform | `eks`, `eks-auto-mode`, `eks-internal`, `kubeadm`, `cluster-version-operator`, and the control-plane managers above when they are the only writers | recreated by the target platform, do not migrate (for a PV or PVC: the object is recreated, move the data) |
-| other | any other field manager (listed in `facts.field_managers`) | unknown tool: check managedFields |
+| other | any other field manager (listed in `facts.field_managers`; the creating one in `facts.manager_raw`, and the page lists the five most common) | unknown tool: check managedFields |
 | unknown | no `managedFields` | no manager data |
 
 Argo CD can track what it deploys by a label (`argocd.argoproj.io/instance`, or the label an

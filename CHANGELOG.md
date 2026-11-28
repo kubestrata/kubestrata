@@ -52,6 +52,11 @@ All notable changes to this project are documented here. Versions follow
 - Ingress, HTTPRoute and Route facts gain `backends` (`service:port`, the port resolved to the
   Service port), Ingress and HTTPRoute `paths`, Ingress `tls`. They enter the fingerprint; between
   snapshots of 0.1.x and this version they are listed as collector facts, not as drift.
+- Managers `kapp` (Carvel: label `kapp.k14s.io/app`, field managers `kapp` and `kapp-controller`)
+  and `console` (field managers starting with `Mozilla`: an edit in a web console, a manual change
+  to review and codify before migrating), with colors, legend entries and migration hints in the
+  page. A resource left in `other` keeps the field manager that created it in the volatile fact
+  `manager_raw`, and the page lists the five most common under the managers.
 - CI: `lab.yml` runs the end-to-end tests on a kuberito lab (`kuberito up --profile full`,
   `make lab-test`, `make page-check`) on pull requests, pushes to `main`, weekly and on demand,
   with kuberito installed from its release (version pinned, checksum and cosign signature

@@ -351,6 +351,10 @@ func (b *builder) base(spec kindSpec, api APIResource, ns, name string, created 
 	if len(names) > 0 {
 		facts["field_managers"] = names
 	}
+	if mgr == MgrOther {
+		// the unknown tool by name, for the page's top list of "other"
+		facts["manager_raw"] = creatorManager(mf)
+	}
 	return &item{
 		ownerUID: ownerUID,
 		res: snapshot.Resource{
@@ -421,6 +425,7 @@ func (b *builder) addSecret(sm *SecretMeta) {
 	switch {
 	case sm.Type == "helm.sh/release.v1" || sm.Labels["owner"] == "helm":
 		it.res.Manager = MgrHelm
+		delete(it.res.Facts, "manager_raw")
 		it.res.Facts["helm_release"] = sm.Labels["name"]
 		it.res.Facts["helm_revision"] = sm.Labels["version"]
 		it.res.Facts["helm_status"] = sm.Labels["status"]
@@ -614,7 +619,7 @@ var volatile = map[string]bool{
 	"pods": true, "ready": true, "restarts": true, "pod_newest": true, "pod_oldest": true,
 	"last_rollout": true, "last_run": true, "jobs": true, "archs": true, "phase": true, "node": true,
 	"volume": true, "claim": true, "field_managers": true, "missing_refs": true, "selects_none": true,
-	"helm_revision": true, "helm_status": true, "orphan": true, "owner_missing": true,
+	"helm_revision": true, "helm_status": true, "orphan": true, "owner_missing": true, "manager_raw": true,
 }
 
 // Volatile reports whether a fact stays out of the fingerprint. compare uses it to name the

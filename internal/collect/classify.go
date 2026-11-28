@@ -19,6 +19,8 @@ const (
 	MgrKubectl   = "kubectl"
 	MgrOperator  = "operator"
 	MgrPlatform  = "platform" // the cluster's own control plane and managed add-ons
+	MgrKapp      = "kapp"     // Carvel kapp (also behind kapp-controller Apps)
+	MgrConsole   = "console"  // edited in a web console (the field manager is a browser user agent)
 	MgrOther     = "other"
 	MgrUnknown   = "unknown"
 )
@@ -55,6 +57,7 @@ func attributeArgoCD(res []snapshot.Resource, lists []listed) *snapshot.ArgoCD {
 		r := &res[i]
 		if managed[r.ID] && r.Manager != MgrArgoCD {
 			r.Manager = MgrArgoCD
+			delete(r.Facts, "manager_raw")
 			out.FromStatus++
 		}
 		if r.Manager == MgrArgoCD {
@@ -78,6 +81,8 @@ func classifyManager(labels, ann map[string]string, mf []metav1.ManagedFieldsEnt
 		return MgrArgoCD, names
 	case hasPrefixKey(labels, "kustomize.toolkit.fluxcd.io/") || hasPrefixKey(labels, "helm.toolkit.fluxcd.io/"):
 		return MgrFlux, names
+	case labels["kapp.k14s.io/app"] != "":
+		return MgrKapp, names
 	case strings.EqualFold(labels["app.kubernetes.io/managed-by"], "helm") || ann["meta.helm.sh/release-name"] != "":
 		return MgrHelm, names
 	case ownedByCR:
@@ -104,6 +109,12 @@ func mapManager(m string) string {
 		return MgrTerraform
 	case strings.HasPrefix(l, "kubectl"):
 		return MgrKubectl
+	case l == "kapp" || l == "kapp-controller":
+		return MgrKapp
+	// the API server names the field manager after the user agent up to the first slash: an edit
+	// in the OpenShift or another web console arrives as "Mozilla"
+	case strings.HasPrefix(m, "Mozilla"):
+		return MgrConsole
 	case platformManagers[m]:
 		return MgrPlatform
 	}
