@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "cluster": {
+    "id": "0123456789ab",
+    "context": "source",
+    "distro": "openshift",
+    "version": "v1.37.0",
+    "collected_at": "2026-11-17T12:00:00Z",
+    "tool": "test"
+  },
+  "resources": 9,
+  "system_resources": 1,
+  "categories": [
+    {
+      "name": "workload",
+      "count": 4
+    },
+    {
+      "name": "network",
+      "count": 3
+    },
+    {
+      "name": "platform",
+      "count": 1
+    },
+    {
+      "name": "storage",
+      "count": 1
+    }
+  ],
+  "kinds": [
+    {
+      "name": "apps.openshift.io/DeploymentConfig",
+      "count": 1
+    },
+    {
+      "name": "apps/Deployment",
+      "count": 1
+    },
+    {
+      "name": "apps/ReplicaSet",
+      "count": 1
+    },
+    {
+      "name": "core/Pod",
+      "count": 1
+    },
+    {
+      "name": "core/Service",
+      "count": 1
+    },
+    {
+      "name": "machineconfiguration.openshift.io/MachineConfig",
+      "count": 1
+    },
+    {
+      "name": "networking.k8s.io/Ingress",
+      "count": 1
+    },
+    {
+      "name": "route.openshift.io/Route",
+      "count": 1
+    },
+    {
+      "name": "storage.k8s.io/StorageClass",
+      "count": 1
+    }
+  ],
+  "nodes": {
+    "count": 3,
+    "arch": {
+      "amd64": 3
+    },
+    "instance_types": {
+      "m6a.large": 3
+    },
+    "zones": [
+      "zone-a",
+      "zone-b"
+    ],
+    "zone_counts": {
+      "zone-a": 2,
+      "zone-b": 1
+    }
+  },
+  "managers": [
+    {
+      "name": "helm",
+      "count": 3
+    },
+    {
+      "name": "kubectl",
+      "count": 2
+    },
+    {
+      "name": "platform",
+      "count": 2
+    },
+    {
+      "name": "console",
+      "count": 1
+    },
+    {
+      "name": "other",
+      "count": 1
+    }
+  ],
+  "top_namespaces": [
+    {
+      "ns": "ns-a",
+      "team": "team-a",
+      "resources": 4
+    },
+    {
+      "ns": "ns-b",
+      "resources": 3
+    }
+  ],
+  "end_of_life": [
+    {
+      "kind": "apps.openshift.io/DeploymentConfig",
+      "note": "DeploymentConfig is deprecated since OpenShift 4.14; target: Deployment",
+      "resources": [
+        "apps.openshift.io/DeploymentConfig/ns-a/portal"
+      ]
+    },
+    {
+      "kind": "networking.k8s.io/Ingress",
+      "note": "ingress-nginx was retired in March 2026; target: Gateway API",
+      "resources": [
+        "networking.k8s.io/Ingress/ns-a/api"
+      ]
+    }
+  ],
+  "unowned": [
+    {
+      "id": "apps/ReplicaSet/ns-b/old-7f9c",
+      "reason": "owner_missing"
+    },
+    {
+      "id": "core/Pod/ns-b/debug",
+      "reason": "orphan"
+    }
+  ],
+  "team_coverage": {
+    "namespaces": 2,
+    "namespaces_with_team": 1,
+    "resources": 7,
+    "resources_with_team": 4
+  },
+  "argocd": {
+    "applications": 2,
+    "managed": 0
+  },
+  "errors": 1,
+  "skipped_kinds": [
+    "core/Secret"
+  ]
+}

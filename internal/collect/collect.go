@@ -309,7 +309,7 @@ func (b *builder) namespaces(snap *snapshot.Snapshot, objs []unstructured.Unstru
 func (b *builder) nodes(snap *snapshot.Snapshot, objs []unstructured.Unstructured) ([]string, []string) {
 	b.nodeArch = map[string]string{}
 	ns := snapshot.NodeSummary{Count: len(objs), Arch: map[string]int{}, InstanceTypes: map[string]int{},
-		CapacityTypes: map[string]int{}}
+		CapacityTypes: map[string]int{}, ZoneCounts: map[string]int{}}
 	zones := map[string]bool{}
 	kubelets := map[string]bool{}
 	labelKeys := map[string]bool{}
@@ -323,6 +323,7 @@ func (b *builder) nodes(snap *snapshot.Snapshot, objs []unstructured.Unstructure
 		labels := u.GetLabels()
 		if z := labels[labelZone]; z != "" {
 			zones[z] = true
+			ns.ZoneCounts[z]++
 		}
 		if t := labels[labelInstanceType]; t != "" {
 			ns.InstanceTypes[t]++

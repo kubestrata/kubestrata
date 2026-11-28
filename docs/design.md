@@ -416,6 +416,7 @@ Fang v2 over Cobra for commands; Bubble Tea v2, Bubbles v2, Lip Gloss v2 and Huh
 | `kubestrata render [-c ctx] [--scale 30m\|1h\|5d\|10d\|30d\|years\|log\|auto] [--rings 30m,2h,1d,1y] [--axis created\|changed] [-o dir] [--open]` | site from the cache |
 | `kubestrata compare -c source -c target [--scale ...] [--rings ...] [--axis ...] [-o dir] [--open]` | coverage table on stdout and side-by-side site from the cache |
 | `kubestrata diff -c ctx [--from stamp] [--to stamp]` | two snapshots of one cluster: new / gone / drift / equal (CLI and JSON) |
+| `kubestrata summary -c ctx` | migration summary of the newest snapshot, Markdown or `--format json` (`schema_version` 1): counts by category and kind, nodes (instance types, zones), managers with their migration path, the 10 biggest namespaces, end-of-life kinds, pods and ReplicaSets without an expected owner, team coverage, Argo CD, collection errors and skipped kinds; system namespaces counted apart |
 | `kubestrata cache ls\|prune [--keep 5]` | snapshot housekeeping; `ls` shows the `STAMP` that `diff` takes |
 
 `--redact` (global) masks account ids, endpoint hosts, OpenShift cluster domains and requester team

@@ -193,6 +193,7 @@ Visão de comparação entre `kuberito-source` e `kuberito-target`:
 | `kubestrata render -c source --open` | visão radial, HTML offline |
 | `kubestrata compare -c source -c target` | equal / drift / pending / new e cobertura, HTML lado a lado |
 | `kubestrata diff -c source` | dois snapshots do mesmo cluster (o mais novo e o anterior, ou `--from`/`--to`): new / gone / drift / equal |
+| `kubestrata summary -c source` | resumo de migração em Markdown (ou JSON): recursos por categoria e kind, nodes por tipo de instância e zona, managers, maiores namespaces, kinds em fim de vida, objetos sem o dono esperado, cobertura de times, Argo CD |
 | `kubestrata` | TUI interativa (planejada) |
 
 `--format json` imprime um documento para máquina com `schema_version` 1. `--redact` mascara IDs

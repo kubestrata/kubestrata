@@ -78,6 +78,11 @@ All notable changes to this project are documented here. Versions follow
   `actions/attest-sbom`, pinned by commit). `gh attestation verify <archive> -R
   kubestrata/kubestrata` verifies an archive without cosign; README and the security analysis show
   how, and how to check the PEP 740 attestation of a PyPI wheel.
+- `kubestrata summary -c <ctx>`: the migration summary of the newest cached snapshot, as Markdown or
+  `--format json` (`schema_version` 1): resources by category and kind, nodes by instance type and
+  zone, managers with their migration path, the biggest namespaces, end-of-life kinds, objects
+  without an expected owner, team coverage, Argo CD, errors and skipped kinds. Respects `--redact`.
+  Snapshots count nodes per zone (`cluster.nodes.zone_counts`).
 - CI: `lab.yml` runs the end-to-end tests on a kuberito lab (`kuberito up --profile full`,
   `make lab-test`, `make page-check`) on pull requests, pushes to `main`, weekly and on demand,
   with kuberito installed from its release (version pinned, checksum and cosign signature

@@ -46,3 +46,30 @@ func TestCollectTeamCoverage(t *testing.T) {
 		t.Errorf("text: %v\n%s", err, text)
 	}
 }
+
+// summary reads the cache only; --redact masks the requester team and the oc login host.
+func TestSummaryCommand(t *testing.T) {
+	dir, kc := seedOpenShift(t)
+	out, err := run(t, "summary", "-c", ocpSource, "--cache-dir", dir, "--kubeconfig", kc, "--redact")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	for _, want := range []string{"# kubestrata summary: ns-a/api-redacted:6443/user-a", "## Managers", "route.openshift.io/Route | 1",
+		"| ns-a | redacted-1 | 1 |"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("summary misses %q:\n%s", want, out)
+		}
+	}
+	assertNoOCPLeak(t, "summary", []byte(out))
+	js, err := run(t, "summary", "-c", ocpSource, "--cache-dir", dir, "--kubeconfig", kc, "--format", "json")
+	var doc struct {
+		SchemaVersion int `json:"schema_version"`
+		Resources     int `json:"resources"`
+	}
+	if err != nil || json.Unmarshal([]byte(js), &doc) != nil || doc.SchemaVersion != 1 || doc.Resources != 1 {
+		t.Errorf("summary json: %v %+v\n%s", err, doc, js)
+	}
+	if _, err := run(t, "summary", "-c", "missing", "--cache-dir", dir, "--kubeconfig", kc); err == nil {
+		t.Error("summary of an uncached context")
+	}
+}

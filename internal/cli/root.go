@@ -50,7 +50,8 @@ func NewRoot(version string) *cobra.Command {
 	root.PersistentFlags().BoolVar(&g.redact, "redact", false,
 		"mask AWS account ids, EKS/AKS endpoint hosts, OpenShift cluster domains and oc login hosts, and teams taken "+
 			"from openshift.io/requester, in the output, --snapshot-out and the site (the cache keeps the real values)")
-	root.AddCommand(newContextsCmd(g), newCollectCmd(g), newCacheCmd(g), newRenderCmd(g), newCompareCmd(g), newDiffCmd(g))
+	root.AddCommand(newContextsCmd(g), newCollectCmd(g), newCacheCmd(g), newRenderCmd(g), newCompareCmd(g), newDiffCmd(g),
+		newSummaryCmd(g))
 	g.maskErrors(root)
 	return root
 }
