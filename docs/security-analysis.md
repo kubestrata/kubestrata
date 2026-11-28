@@ -20,6 +20,8 @@ shows the alerts open right now.
 | Dependabot version updates ([`dependabot.yml`](../.github/dependabot.yml)) | newer modules (Kubernetes and `golang.org/x` grouped) and actions | weekly | opens a pull request |
 | Secret scanning and push protection | credentials committed to the repository | on every push | a push with a detected secret is rejected |
 | `go vet`, `staticcheck` ([`ci.yml`](../.github/workflows/ci.yml)) | bug patterns | every pull request, every push to `main` | yes |
+| Unit test coverage ([`ci.yml`](../.github/workflows/ci.yml)) | the share of statements the unit tests run, printed in the job summary | every pull request, every push to `main` | no: measured, no threshold yet |
+| [OpenSSF Scorecard](https://scorecard.dev) ([`scorecard.yml`](../.github/workflows/scorecard.yml)) | repository supply-chain practices: pinned dependencies, token permissions, branch protection, signed releases, SAST, ... | every push to `main`, weekly | no: results in code scanning and on the README badge |
 | [`install-smoke.yml`](../.github/workflows/install-smoke.yml) | the installed binary never prints the kubeconfig credential (`contexts` on a fixture with a token) | after every release, weekly | yes |
 | [`lab.yml`](../.github/workflows/lab.yml) | on a kuberito lab (release pinned, checksum and cosign signature verified): no seeded secret value, `last-applied-configuration` or account id in any snapshot (`TestLabNoSecretLeak`), and the pages load under their Content-Security-Policy without errors (`make page-check`) | every pull request, every push to `main`, weekly, once the variable `KUBERITO_PUBLIC` is `true` | yes |
 

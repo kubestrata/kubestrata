@@ -91,6 +91,9 @@ All notable changes to this project are documented here. Versions follow
 - [docs/openshift.md](docs/openshift.md) (EN/PT-BR): a first run on OpenShift, from `oc login` with
   the cluster CA and the RBAC files to collect, the scales for long-lived clusters, `--redact`,
   what the page shows for OpenShift, the comparison with the target and `oc logout`.
+- CI measures unit test coverage (printed in the job summary, no threshold yet), and
+  `scorecard.yml` runs OpenSSF Scorecard on every push to `main` and weekly, with results in code
+  scanning and the Scorecard badge in the README.
 - CI: `lab.yml` runs the end-to-end tests on a kuberito lab (`kuberito up --profile full`,
   `make lab-test`, `make page-check`) on pull requests, pushes to `main`, weekly and on demand,
   with kuberito installed from its release (version pinned, checksum and cosign signature

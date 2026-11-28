@@ -56,5 +56,10 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: go test -race
-        run: go test -race -count=1 ./...
+      # Coverage is measured and printed (job summary too); there is no threshold yet.
+      - name: go test -race (coverage)
+        run: |
+          go test -race -count=1 -coverprofile=coverage.out ./...
+          total="$(go tool cover -func=coverage.out | tail -n 1)"
+          echo "$total"
+          printf 'Unit test coverage: %s\n' "$(echo "$total" | awk '{print $NF}')" >> "$GITHUB_STEP_SUMMARY"

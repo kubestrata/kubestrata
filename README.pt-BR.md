@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/kubestrata/kubestrata/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kubestrata/kubestrata/actions/workflows/ci.yml?query=branch%3Amain)
 [![security](https://github.com/kubestrata/kubestrata/actions/workflows/security.yml/badge.svg?branch=main)](docs/security-analysis.pt-BR.md)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/kubestrata/kubestrata/badge)](https://scorecard.dev/viewer/?uri=github.com/kubestrata/kubestrata)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 [![Go 1.27](https://img.shields.io/badge/go-1.27-00ADD8)](go.mod)
 
