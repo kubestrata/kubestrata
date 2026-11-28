@@ -115,6 +115,10 @@ kubestrata compare -c <origem> -c <destino> --open  # lado a lado, com a cobertu
 
 `render` e `compare` só leem o cache. Rode `collect --force` para atualizá-lo.
 
+Primeira vez no OpenShift? O [docs/openshift.pt-BR.md](docs/openshift.pt-BR.md) cobre o login com a
+CA do cluster, os arquivos de RBAC, o collect, as escalas para cluster de vida longa, o `--redact`, o
+que a página mostra para o OpenShift, a comparação com o destino e a limpeza.
+
 ### Sem cluster à mão? Teste no lab do kuberito
 
 O [kuberito](https://github.com/kuberito/kuberito) sobe dois clusters locais pequenos no Docker,

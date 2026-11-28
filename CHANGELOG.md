@@ -88,6 +88,9 @@ All notable changes to this project are documented here. Versions follow
   `insecure_skip_tls_verify`, `static_token` and `auth` in JSON (the token is never printed).
   README "Kubeconfig hygiene" shows how to trust the cluster CA instead and to log out with
   `oc logout`.
+- [docs/openshift.md](docs/openshift.md) (EN/PT-BR): a first run on OpenShift, from `oc login` with
+  the cluster CA and the RBAC files to collect, the scales for long-lived clusters, `--redact`,
+  what the page shows for OpenShift, the comparison with the target and `oc logout`.
 - CI: `lab.yml` runs the end-to-end tests on a kuberito lab (`kuberito up --profile full`,
   `make lab-test`, `make page-check`) on pull requests, pushes to `main`, weekly and on demand,
   with kuberito installed from its release (version pinned, checksum and cosign signature

@@ -115,6 +115,10 @@ kubestrata compare -c <source> -c <target> --open   # side by side, with the cov
 
 `render` and `compare` read the cache only. Run `collect --force` to refresh it.
 
+First time on OpenShift? [docs/openshift.md](docs/openshift.md) walks through login with the
+cluster CA, the RBAC files, collect, the scales for long-lived clusters, `--redact`, what the page
+shows for OpenShift, the comparison with the target and the clean-up.
+
 ### No cluster at hand? Try it on the kuberito lab
 
 [kuberito](https://github.com/kuberito/kuberito) brings up two small local clusters on Docker, an
