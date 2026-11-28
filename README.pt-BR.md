@@ -291,7 +291,8 @@ Checagens, histórico de achados e como repeti-las numa release:
 ## Design
 
 Ver [docs/design.pt-BR.md](docs/design.pt-BR.md) (versão oficial em inglês:
-[docs/design.md](docs/design.md)).
+[docs/design.md](docs/design.md)), e [docs/roadmap.pt-BR.md](docs/roadmap.pt-BR.md) para o checklist
+da 1.0.
 
 ## Como contribuir
 

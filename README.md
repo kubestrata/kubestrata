@@ -288,7 +288,7 @@ Checks, findings history and how to repeat them on a release:
 
 ## Design
 
-See [docs/design.md](docs/design.md).
+See [docs/design.md](docs/design.md), and [docs/roadmap.md](docs/roadmap.md) for the 1.0 checklist.
 
 ## Contributing
 

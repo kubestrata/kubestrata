@@ -103,6 +103,9 @@ All notable changes to this project are documented here. Versions follow
   of the design (`kubestrata` alone prints the help); the design no longer lists Bubble Tea, Bubbles
   and Huh, which the code does not use; `--redact` lists `summary`; the status line links the
   compatibility page.
+- [docs/roadmap.md](docs/roadmap.md) (EN/PT-BR): the 1.0 checklist and what is done, the plan
+  (0.2.0, then `1.0.0-rc.1` after an OpenShift → EKS pilot checked by hand) and the accepted risk of
+  a single maintainer.
 - CI: `lab.yml` runs the end-to-end tests on a kuberito lab (`kuberito up --profile full`,
   `make lab-test`, `make page-check`) on pull requests, pushes to `main`, weekly and on demand,
   with kuberito installed from its release (version pinned, checksum and cosign signature
