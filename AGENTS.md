@@ -45,12 +45,25 @@ Design completo: `docs/design.md`.
 
 ## Estado atual (onde parei)
 
-> Última atualização: 2026-11-27 (teste de campo no OpenShift e revisão independente, K12–K30)
+> Última atualização: 2026-11-28 (release 0.2.0)
+
+2026-11-28: PR #17 (K12–K30) mergeado com os follow-ups da revisão: Ingress→HTTPRoute pareado
+como Route→HTTPRoute; kinds de plataforma fora das contagens e da cobertura do `compare`; usuário
+do `oc login` mascarado; escala `auto` é o padrão só do `render` (o `compare` fica em `30d`);
+`actions/attest` v4.2.2 no lugar do `attest-sbom` (deprecado). Issue #18: `--redact-domain`
+(próxima rodada). Release 0.2.0 (PR #19): `v0.2.0-rc.1` no TestPyPI e depois `v0.2.0` no PyPI, 10
+assets (4 pacotes, 4 SBOMs CycloneDX, `checksums.txt` e o bundle do Sigstore), `cosign verify-blob`
+e `gh attestation verify` (provenance SLSA e SBOM) conferidos à mão, `install-smoke` 16/16. Os 4
+jobs `go` falharam na primeira vez com `unknown revision v0.2.0` no proxy do Go (o mesmo da 0.1.4,
+nas duas vezes com a rc tagueada pouco antes) e passaram no rerun depois de ~21 min. O kuberito
+ficou público e lançou a v0.2.0 assinada; `KUBERITO_PUBLIC=true` liga o `lab.yml`, que fixa o
+sha256 do pacote linux/amd64 da v0.2.0 e passou no PR #19 (lab-test e page-check 35/35).
 
 Sessão 2026-11-27 (branch `feat/openshift-field-test`, um commit por item, sem push): K12
 `--redact` para OpenShift (`api.redacted`, `*.apps.redacted`, host do `oc login`, times do
 `openshift.io/requester` como `redacted-N`; `namespaces[].team_from`); K13 escalas `years`, `auto`
-e sufixo `y` (o padrão continua `30d`: no lab o `auto` espreme as ondas do destino); K14 Argo CD
+e sufixo `y` (na revisão, `auto` virou o padrão do `render`; o `compare` fica em `30d` porque no
+lab o `auto` espreme as ondas do destino); K14 Argo CD
 pelo `status.resources` das Applications e `cluster.argocd`; K20 `--skip-kinds`/`--no-secrets` e
 `deploy/rbac/` (testado no `kuberito-source` com token de ServiceAccount, RBAC apagado); K23 busca
 com vários valores; K25 `compare` pareia Route→HTTPRoute/Ingress e DeploymentConfig→Deployment
@@ -144,10 +157,12 @@ verdade-base do lab: 0 divergência, 0 vazamento.
 - [x] CI: `.github/workflows/ci.yml` (lint + test -race); primeira execução verde em 2026-11-18 (run 44340222456, `04f7c74`)
 - [x] Achados do workshop AWS: escalas 30m/1h, K1 `diff` (CLI/JSON), K2 verificado (fixture + workshop), K3, K4, K5 `--redact`, K6, K8 `--snapshot-out`
 - [ ] K1: site do `diff` (exige mudar a chave dos arquivos `data/<cluster_id>.js`); K7 custo por recurso a partir de export do Kubecost/OpenCost (fora desta rodada)
-- [x] Teste de campo no OpenShift e revisão independente: K12–K30 (2026-11-27, branch `feat/openshift-field-test`)
-- [ ] Release 0.2.0; piloto OpenShift → EKS conferido à mão; `1.0.0-rc.1` (`docs/roadmap.md`)
+- [x] Teste de campo no OpenShift e revisão independente: K12–K30 (2026-11-27, PR #17)
+- [x] Release 0.2.0 (2026-11-28): SBOM, provenance e PyPI exercitados
+- [ ] Piloto OpenShift → EKS conferido à mão; `1.0.0-rc.1` (`docs/roadmap.md`)
+- [ ] Issue #18: `--redact-domain`
 - [ ] F3: TUI interativa (saiu do plano da F1); teste de não vazamento sobre o site; golden de render
-- [ ] F2: Ingress → HTTPRoute no `compare` (decisão aberta), `--map-ns` e PVs de nome gerado nas unidades de migração
+- [ ] F2: `--map-ns` e PVs de nome gerado nas unidades de migração (Ingress → HTTPRoute feito no #17)
 - [x] CONTRIBUTING, CODE_OF_CONDUCT, SECURITY e CHANGELOG (`e8c436f`); repo público desde 2026-11-20
 - [x] v0.1.0: release (2026-11-26), Homebrew `kubestrata/tap/kubestrata`, `go install`, tarball assinado
 
