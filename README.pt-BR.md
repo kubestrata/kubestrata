@@ -201,7 +201,9 @@ nomes dos estados ficam em inglês na saída):
 | new | só no destino |
 
 Cobertura por namespace = (equal + drift) / recursos na origem. Os namespaces de sistema ficam fora
-dos totais.
+dos totais. O `collect --system-ns <regexp>` decide quais namespaces são de sistema (padrão: os do
+Kubernetes, do OpenShift e dos provedores de nuvem): eles continuam coletados, só ficam ocultos por
+padrão na página (botão `system`, `render`/`compare --show-system`) e fora dos totais.
 
 ### A página
 

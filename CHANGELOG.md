@@ -68,6 +68,10 @@ All notable changes to this project are documented here. Versions follow
   `admin` and the users of `--requester-ignore` (a trailing `*` matches a prefix). `collect` prints
   the team coverage in a `TEAMS` column (`team_coverage` in JSON), and the page shows it in the
   overview; both leave system namespaces out.
+- `--system-ns` help and docs say what it is: the regexp of the namespaces treated as system,
+  collected like the others but hidden by default in the page and left out of the compare and diff
+  totals. `render`/`compare --show-system` start the page with them shown (`system=0` in the hash
+  hides them again).
 - CI: `lab.yml` runs the end-to-end tests on a kuberito lab (`kuberito up --profile full`,
   `make lab-test`, `make page-check`) on pull requests, pushes to `main`, weekly and on demand,
   with kuberito installed from its release (version pinned, checksum and cosign signature

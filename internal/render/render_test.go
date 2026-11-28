@@ -312,3 +312,21 @@ func TestAutoRingsInConfig(t *testing.T) {
 		t.Errorf("index.html misses the auto rings: %s", page[bytes.Index(page, []byte("KUBESTRATA_VIEW")):][:300])
 	}
 }
+
+// --show-system reaches the page config.
+func TestShowSystemInConfig(t *testing.T) {
+	d := t.TempDir()
+	if _, err := Write(d, []*snapshot.Snapshot{fixture()}, Options{ShowSystem: true}); err != nil {
+		t.Fatal(err)
+	}
+	page, _ := os.ReadFile(filepath.Join(d, "index.html"))
+	if !bytes.Contains(page, []byte(`"show_system":true`)) {
+		t.Error("index.html misses show_system")
+	}
+	if _, err := Write(d, []*snapshot.Snapshot{fixture()}, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if page, _ := os.ReadFile(filepath.Join(d, "index.html")); bytes.Contains(page, []byte(`"show_system":true`)) {
+		t.Error("show_system set by default")
+	}
+}

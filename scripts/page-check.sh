@@ -41,6 +41,8 @@ trap 'rm -rf "$out"' EXIT
 # rings in years for long-lived clusters, and the auto scale (quantiles of the resource ages)
 "$bin" render -c "$src" -o "$out/render-years" --rings 30d,90d,180d,1y,2y,3y,5y >/dev/null
 "$bin" render -c "$src" -o "$out/render-auto" --scale auto >/dev/null
+# system namespaces shown from the start
+"$bin" render -c "$src" -o "$out/render-system" --show-system >/dev/null
 "$bin" compare -c "$src" -c "$tgt" -o "$out/compare" --format json >/dev/null
 
 # A real drift pair (or the first item) and its namespace, for the selection and filter states.
@@ -114,7 +116,7 @@ fi
 # resources the render page reports in data-match against data-shown
 assert() { # description condition
   total=$((total + 1))
-  if eval "$2"; then echo "ok    search: $1"; else echo "FAIL  search: $1"; fail=$((fail + 1)); fi
+  if eval "$2"; then echo "ok    $1"; else echo "FAIL  $1"; fail=$((fail + 1)); fi
 }
 matches() { attr "$(body render "$1")" data-match; }
 shown=$(attr "$(body render "")" data-shown)
@@ -123,11 +125,15 @@ m_dep=$(matches "q=kind:Deployment"); m_svc=$(matches "q=kind:Service"); m_both=
 m_field=$(matches "q=ns:$ns"); m_and=$(matches "q=ns:$ns%20kind:Deployment")
 echo "      search counts: shown $shown, '$ns' $m_ns, '-$ns' $m_other, '$ns,x' $m_or, kind:Deployment $m_dep," \
   "kind:Service $m_svc, both $m_both, ns:$ns $m_field, ns:$ns kind:Deployment $m_and"
-assert "one term matches ($ns: $m_ns)" '[ "${m_ns:-0}" -gt 0 ]'
-assert "OR: any term matches ($ns,x = $m_or; kind:Deployment,kind:Service $m_both = $m_dep + $m_svc)" \
+assert "search: one term matches ($ns: $m_ns)" '[ "${m_ns:-0}" -gt 0 ]'
+assert "search OR: any term matches ($ns,x = $m_or; kind:Deployment,kind:Service $m_both = $m_dep + $m_svc)" \
   '[ "$m_or" = "$m_ns" ] && [ "${m_svc:-0}" -gt 0 ] && [ "$m_both" = "$((m_dep + m_svc))" ]'
-assert "exclusion is the complement (-$ns: $m_other = $shown - $m_ns)" '[ "$m_other" = "$((shown - m_ns))" ]'
-assert "a field prefix narrows, AND across fields (ns:$ns kind:Deployment $m_and <= ns:$ns $m_field, kind:Deployment $m_dep)" \
+assert "search: exclusion is the complement (-$ns: $m_other = $shown - $m_ns)" '[ "$m_other" = "$((shown - m_ns))" ]'
+sys_flag=$(attr "$(body render-system "")" data-shown); sys_hash=$(attr "$(body render "system=1")" data-shown)
+sys_off=$(attr "$(body render-system "system=0")" data-shown)
+assert "system: --show-system starts like #system=1 ($sys_flag = $sys_hash), #system=0 hides them again ($sys_off = $shown)" \
+  '[ -n "$sys_flag" ] && [ "$sys_flag" = "$sys_hash" ] && [ "$sys_off" = "$shown" ]'
+assert "search: a field prefix narrows, AND across fields (ns:$ns kind:Deployment $m_and <= ns:$ns $m_field, kind:Deployment $m_dep)" \
   '[ "${m_and:-0}" -gt 0 ] && [ "$m_and" -le "$m_field" ] && [ "$m_and" -le "$m_dep" ] && [ "$m_field" -le "$m_ns" ]'
 
 echo "page-check: $((total - fail))/$total pages ok ($src -> $tgt)"

@@ -156,7 +156,9 @@ func newCollectCmd(g *globals) *cobra.Command {
 	cmd.Flags().DurationVar(&f.maxAge, "max-age", 6*time.Hour, "reuse a cached snapshot younger than this")
 	cmd.Flags().BoolVar(&f.force, "force", false, "ignore --max-age and collect again (refresh)")
 	cmd.Flags().BoolVar(&f.crds, "crds", true, "include custom resources")
-	cmd.Flags().StringVar(&f.systemNS, "system-ns", collect.DefaultSystemNS, "regexp of system namespaces (hidden by default in the view)")
+	cmd.Flags().StringVar(&f.systemNS, "system-ns", collect.DefaultSystemNS,
+		"regexp of the namespaces treated as system: collected like the others, but hidden by default in the page "+
+			"(system toggle, render/compare --show-system) and left out of the compare and diff totals")
 	cmd.Flags().StringSliceVar(&f.teamKeys, "team-label", collect.DefaultTeamKeys, "label/annotation keys that name the owning team, in order")
 	cmd.Flags().StringVar(&f.snapshotOut, "snapshot-out", "",
 		"also write the plain JSON snapshot to this file (one context), or into this existing directory as <cluster_id>.json")

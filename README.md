@@ -199,7 +199,9 @@ kinds express and shown with the translation (`Route→HTTPRoute`) in the JSON a
 | new | only in the target |
 
 Coverage per namespace = (equal + drift) / resources in the source. System namespaces are left out
-of the totals.
+of the totals. `collect --system-ns <regexp>` decides which namespaces are system (default: the
+Kubernetes, OpenShift and cloud provider ones): they are still collected, only hidden by default
+in the page (`system` toggle, `render`/`compare --show-system`) and left out of the totals.
 
 ### The page
 

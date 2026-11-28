@@ -101,6 +101,8 @@ func addScaleFlags(cmd *cobra.Command, o *render.Options, rings *[]string) {
 	cmd.Flags().StringVar(&o.Axis, "axis", "created", "initial time axis: created or changed")
 	cmd.Flags().StringSliceVar(rings, "rings", nil,
 		"custom rings, ascending: m, h, d or y suffix, a bare number is days (e.g. 30m,2h,1d,7d,30d or 30d,90d,180d,1y,2y,5y)")
+	cmd.Flags().BoolVar(&o.ShowSystem, "show-system", false,
+		"start the page with the system namespaces shown (collect --system-ns decides which they are)")
 }
 
 // scaleOptions reads --rings into the options and validates them.

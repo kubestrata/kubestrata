@@ -69,7 +69,7 @@
 
   // ---- state (initial values from the config, then from the URL hash)
   // ns: namespace filter ("_" = cluster-scoped), exact match on the resource namespace; q: free-text search
-  var st = { scale: CFG.scale || "30d", axis: CFG.axis || "created", color: COMPARE ? "state" : "cat", system: false,
+  var st = { scale: CFG.scale || "30d", axis: CFG.axis || "created", color: COMPARE ? "state" : "cat", system: !!CFG.show_system,
     ns: "", q: "", sel: null, cats: {}, cluster: (CFG.clusters || [])[0] };
   CATS.forEach(function (c) { st.cats[c] = !CAT_OFF[c]; });
   (function () {
@@ -89,7 +89,7 @@
   function saveHash() {
     var parts = ["scale=" + st.scale, "axis=" + st.axis, "color=" + st.color];
     if (!COMPARE && (CFG.clusters || []).length > 1) parts.push("cluster=" + encodeURIComponent(st.cluster));
-    if (st.system) parts.push("system=1");
+    if (st.system !== !!CFG.show_system) parts.push("system=" + (st.system ? "1" : "0"));
     if (st.ns) parts.push("ns=" + encodeURIComponent(st.ns));
     var hide = CATS.filter(function (c) { return !st.cats[c] && !CAT_OFF[c]; });
     if (hide.length) parts.push("hide=" + hide.join(","));

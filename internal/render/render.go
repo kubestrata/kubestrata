@@ -47,8 +47,10 @@ type Options struct {
 	Axis  string
 	// RingMinutes are the custom rings in minutes, ascending; ParseRings reads them from --rings.
 	RingMinutes []int
-	Version     string
-	Compare     *compare.Result // compare mode: the comparison of the two snapshots
+	// ShowSystem starts the page with the system namespaces shown (the system toggle on).
+	ShowSystem bool
+	Version    string
+	Compare    *compare.Result // compare mode: the comparison of the two snapshots
 }
 
 type viewConfig struct {
@@ -60,6 +62,7 @@ type viewConfig struct {
 	RingMinutes   []int    `json:"ring_minutes,omitempty"`
 	// AutoRingMinutes are the rings of the auto scale per axis (created, changed), in minutes.
 	AutoRingMinutes map[string][]int `json:"auto_ring_minutes,omitempty"`
+	ShowSystem      bool             `json:"show_system,omitempty"`
 	Version         string           `json:"version"`
 }
 
@@ -155,7 +158,7 @@ func Write(dir string, snaps []*snapshot.Snapshot, o Options) (string, error) {
 		}
 	}
 	cfg := viewConfig{SchemaVersion: ViewSchemaVersion, Mode: o.Mode, Scale: o.Scale, Axis: o.Axis,
-		RingMinutes: o.RingMinutes, Version: o.Version, AutoRingMinutes: map[string][]int{}}
+		RingMinutes: o.RingMinutes, Version: o.Version, AutoRingMinutes: map[string][]int{}, ShowSystem: o.ShowSystem}
 	for _, axis := range []string{"created", "changed"} {
 		if r := AutoRings(snaps, axis); len(r) > 0 {
 			cfg.AutoRingMinutes[axis] = r
