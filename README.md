@@ -204,7 +204,9 @@ of the totals.
 ### The page
 
 The header filters by category, system namespaces, scale, axis and color; the search box (`/`)
-dims what does not match. Search syntax, the same on the render and compare pages:
+dims what does not match. The `platform` category (custom resources of OpenShift's cluster
+operators, such as MachineConfig and APIRequestCount) starts hidden: click its chip, or add
+`show=platform` to the URL hash. Search syntax, the same on the render and compare pages:
 
 | Query | Matches |
 |---|---|

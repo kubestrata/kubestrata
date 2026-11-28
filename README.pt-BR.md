@@ -206,7 +206,9 @@ dos totais.
 ### A página
 
 O cabeçalho filtra por categoria, namespaces de sistema, escala, eixo e cor; a busca (`/`) esmaece
-o que não casa. Sintaxe da busca, a mesma nas páginas de render e de compare:
+o que não casa. A categoria `platform` (custom resources dos cluster operators do OpenShift, como
+MachineConfig e APIRequestCount) começa oculta: clique no chip dela ou acrescente `show=platform`
+ao hash da URL. Sintaxe da busca, a mesma nas páginas de render e de compare:
 
 | Busca | Casa com |
 |---|---|

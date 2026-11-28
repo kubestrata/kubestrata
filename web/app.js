@@ -23,9 +23,12 @@
     }
   }
 
-  var CATS = ["workload", "network", "config", "storage", "policy", "crd"];
+  // platform: custom resources of the cluster platform (OpenShift cluster operators, r.platform),
+  // hidden until switched on
+  var CATS = ["workload", "network", "config", "storage", "policy", "crd", "platform"];
   var CAT_COLOR = { workload: "#4fc3f7", network: "#ba68c8", config: "#ffd54f", storage: "#81c784",
-    policy: "#ff8a65", crd: "#90a4ae" };
+    policy: "#ff8a65", crd: "#90a4ae", platform: "#8d6e63" };
+  var CAT_OFF = { platform: true };
   var MGR = ["argocd", "flux", "helm", "kapp", "terraform", "operator", "kubectl", "console", "platform", "other", "unknown"];
   var MGR_COLOR = { argocd: "#ff9800", flux: "#5c6bc0", helm: "#26a69a", kapp: "#00acc1", terraform: "#c0ca33",
     operator: "#ab47bc", kubectl: "#ef5350", console: "#ec407a", platform: "#8d6e63", other: "#9e9e9e", unknown: "#616161" };
@@ -68,7 +71,7 @@
   // ns: namespace filter ("_" = cluster-scoped), exact match on the resource namespace; q: free-text search
   var st = { scale: CFG.scale || "30d", axis: CFG.axis || "created", color: COMPARE ? "state" : "cat", system: false,
     ns: "", q: "", sel: null, cats: {}, cluster: (CFG.clusters || [])[0] };
-  CATS.forEach(function (c) { st.cats[c] = true; });
+  CATS.forEach(function (c) { st.cats[c] = !CAT_OFF[c]; });
   (function () {
     var h = location.hash.replace(/^#/, "").split("&");
     h.forEach(function (kv) {
@@ -79,6 +82,7 @@
       if (k === "sel") st.sel = v;
       if (k === "q") st.q = v;
       if (k === "hide") v.split(",").forEach(function (c) { if (c) st.cats[c] = false; });
+      if (k === "show") v.split(",").forEach(function (c) { if (c && CATS.indexOf(c) >= 0) st.cats[c] = true; });
     });
     if (st.color === "state" && !COMPARE) st.color = "cat";
   })();
@@ -87,8 +91,10 @@
     if (!COMPARE && (CFG.clusters || []).length > 1) parts.push("cluster=" + encodeURIComponent(st.cluster));
     if (st.system) parts.push("system=1");
     if (st.ns) parts.push("ns=" + encodeURIComponent(st.ns));
-    var hide = CATS.filter(function (c) { return !st.cats[c]; });
+    var hide = CATS.filter(function (c) { return !st.cats[c] && !CAT_OFF[c]; });
     if (hide.length) parts.push("hide=" + hide.join(","));
+    var show = CATS.filter(function (c) { return st.cats[c] && CAT_OFF[c]; });
+    if (show.length) parts.push("show=" + show.join(","));
     if (st.q) parts.push("q=" + encodeURIComponent(st.q));
     if (st.sel) parts.push("sel=" + encodeURIComponent(st.sel));
     history.replaceState(null, "", "#" + parts.join("&"));
@@ -222,7 +228,7 @@
     (snap.namespaces || []).forEach(function (n) { ns[n.name] = n; });
     var byId = {}, out = {}, inn = {};
     var nodes = (snap.resources || []).map(function (r) {
-      var n = { r: r, id: r.id, cat: CATS.indexOf(r.cat) >= 0 ? r.cat : "crd", ns: r.ns || "_",
+      var n = { r: r, id: r.id, cat: r.platform ? "platform" : CATS.indexOf(r.cat) >= 0 ? r.cat : "crd", ns: r.ns || "_",
         h1: fnv(r.id), h2: fnv(r.id + "#") };
       var nsInfo = ns[n.ns];
       n.system = !!(nsInfo && nsInfo.system);
@@ -903,6 +909,7 @@
       var n = Object.keys(cat).filter(function (id) { return cat[id] === c; }).length;
       if (!n) return;
       var b = el("button", { class: "chip" + (st.cats[c] ? " on" : " off") });
+      if (c === "platform") b.title = "custom resources of the cluster platform (OpenShift cluster operators): hidden by default";
       var dot = el("i"); dot.style.background = CAT_COLOR[c];
       b.appendChild(dot); b.appendChild(document.createTextNode(c)); b.appendChild(el("span", { class: "n" }, String(n)));
       b.addEventListener("click", function () { st.cats[c] = !st.cats[c]; refresh(); });

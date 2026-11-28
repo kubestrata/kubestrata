@@ -785,3 +785,53 @@ func TestManagerRaw(t *testing.T) {
 		t.Error("manager_raw enters the fingerprint")
 	}
 }
+
+// OpenShift platform noise (K16): OLM's copies of a ClusterServiceVersion fold into the original,
+// and the cluster operator kinds are flagged as platform while keeping the crd category.
+func TestPlatformKindsAndCopiedCSVs(t *testing.T) {
+	csv := APIResource{Group: "operators.coreos.com", Version: "v1alpha1", Resource: "clusterserviceversions",
+		Kind: "ClusterServiceVersion", Namespaced: true, CRD: true}
+	arc := APIResource{Group: "apiserver.openshift.io", Version: "v1", Resource: "apirequestcounts", Kind: "APIRequestCount", CRD: true}
+	mc := APIResource{Group: "machineconfiguration.openshift.io", Version: "v1", Resource: "machineconfigs", Kind: "MachineConfig", CRD: true}
+	mcp := APIResource{Group: "machineconfiguration.openshift.io", Version: "v1", Resource: "machineconfigpools",
+		Kind: "MachineConfigPool", CRD: true}
+	copied := func(ns, name, from string) unstructured.Unstructured {
+		return obj("operators.coreos.com/v1alpha1", "ClusterServiceVersion", ns, name, "olm", map[string]string{"olm.copiedFrom": from}, nil)
+	}
+	src := smallSource(map[APIResource][]unstructured.Unstructured{
+		csv: {obj("operators.coreos.com/v1alpha1", "ClusterServiceVersion", "openshift-operators", "op.v1", "catalog", nil, nil),
+			copied("ns-a", "op.v1", "openshift-operators"), copied("openshift-gitops", "op.v1", "openshift-operators"),
+			copied("ns-a", "lost.v2", "ns-gone")},
+		arc:                           {obj("apiserver.openshift.io/v1", "APIRequestCount", "", "pods.v1", "kube-apiserver", nil, nil)},
+		mc:                            {obj("machineconfiguration.openshift.io/v1", "MachineConfig", "", "00-worker", "machine-config-operator", nil, nil)},
+		mcp:                           {obj("machineconfiguration.openshift.io/v1", "MachineConfigPool", "", "worker", "machine-config-operator", nil, nil)},
+		resourceOf["apps/Deployment"]: {obj("apps/v1", "Deployment", "ns-a", "web", "kubectl-create", nil, nil)},
+	})
+	snap, err := Collect(context.Background(), src, Options{Context: "lab", ToolVersion: "test", CRDs: true, Now: fixedNow})
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := find(t, snap, "operators.coreos.com/ClusterServiceVersion/openshift-operators/op.v1")
+	if orig.Facts["copies"] != int64(2) || orig.Platform {
+		t.Errorf("original CSV: platform %v, facts %v", orig.Platform, orig.Facts)
+	}
+	for _, r := range snap.Resources {
+		if r.Kind == "ClusterServiceVersion" && r.NS != "openshift-operators" && r.Name == "op.v1" {
+			t.Errorf("copy kept: %s", r.ID)
+		}
+	}
+	// a copy without its original stays
+	find(t, snap, "operators.coreos.com/ClusterServiceVersion/ns-a/lost.v2")
+	for _, id := range []string{"apiserver.openshift.io/APIRequestCount/_/pods.v1", "machineconfiguration.openshift.io/MachineConfig/_/00-worker",
+		"machineconfiguration.openshift.io/MachineConfigPool/_/worker"} {
+		if r := find(t, snap, id); !r.Platform || r.Cat != CatCRD {
+			t.Errorf("%s: platform %v, cat %s", id, r.Platform, r.Cat)
+		}
+	}
+	if find(t, snap, "apps/Deployment/ns-a/web").Platform {
+		t.Error("a Deployment flagged as platform")
+	}
+	if !Volatile("copies") {
+		t.Error("the number of copies enters the fingerprint")
+	}
+}

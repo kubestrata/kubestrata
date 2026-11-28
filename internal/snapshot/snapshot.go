@@ -112,6 +112,10 @@ type Resource struct {
 	Labels  map[string]string `json:"labels,omitempty"`
 	Facts   map[string]any    `json:"facts,omitempty"`
 	FP      string            `json:"fp,omitempty"`
+	// Platform marks a custom resource of the cluster platform itself (OpenShift cluster operator
+	// kinds such as MachineConfig or APIRequestCount): cat stays crd, the page shows it as the
+	// platform category, hidden by default.
+	Platform bool `json:"platform,omitempty"`
 }
 
 // Edge links two resources of the same snapshot.

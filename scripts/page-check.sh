@@ -78,7 +78,7 @@ check() { # page hash [text the <body> tag must also hold] [text it must not hol
   fi
 }
 
-for h in "" "scale=log&axis=changed&color=manager" "scale=10d&color=team&system=1" "sel=$id&ns=$ns"; do
+for h in "" "scale=log&axis=changed&color=manager" "scale=10d&color=team&system=1" "sel=$id&ns=$ns" "show=platform&hide=config"; do
   check render "$h"
 done
 # ring labels below one day read in minutes and hours

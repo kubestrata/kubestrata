@@ -70,6 +70,28 @@ func specFor(group, resource string) (kindSpec, bool) {
 	return kindSpec{}, false
 }
 
+// platformGroups serve the configuration and state of OpenShift's own cluster operators, which the
+// cluster version operator installs and the target platform replaces: machine configuration and
+// the Machine API, cluster-wide config.openshift.io settings, the operator configs of
+// operator.openshift.io and of the per-operator groups, API request counts, console
+// customizations. Their custom resources get Platform.
+var platformGroups = map[string]bool{
+	"apiserver.openshift.io":              true, // APIRequestCount
+	"machineconfiguration.openshift.io":   true, // MachineConfig, MachineConfigPool, KubeletConfig, ...
+	"config.openshift.io":                 true, // ClusterVersion, ClusterOperator, Infrastructure, ...
+	"operator.openshift.io":               true, // IngressController, Network, Etcd, KubeAPIServer, ...
+	"controlplane.operator.openshift.io":  true, // PodNetworkConnectivityCheck
+	"imageregistry.operator.openshift.io": true,
+	"samples.operator.openshift.io":       true,
+	"ingress.operator.openshift.io":       true, // DNSRecord
+	"network.operator.openshift.io":       true,
+	"machine.openshift.io":                true, // Machine, MachineSet, MachineHealthCheck
+	"autoscaling.openshift.io":            true, // ClusterAutoscaler, MachineAutoscaler
+	"tuned.openshift.io":                  true,
+	"cloudcredential.openshift.io":        true, // CredentialsRequest
+	"console.openshift.io":                true, // ConsoleLink, ConsolePlugin, ...
+}
+
 // noiseConfigMaps are created by the control plane in every namespace.
 var noiseConfigMaps = map[string]bool{"kube-root-ca.crt": true, "openshift-service-ca.crt": true}
 

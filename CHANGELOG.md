@@ -57,6 +57,12 @@ All notable changes to this project are documented here. Versions follow
   to review and codify before migrating), with colors, legend entries and migration hints in the
   page. A resource left in `other` keeps the field manager that created it in the volatile fact
   `manager_raw`, and the page lists the five most common under the managers.
+- OpenShift platform noise: the ClusterServiceVersions OLM copies into every watched namespace
+  (label `olm.copiedFrom`) fold into the original, which counts them in the volatile fact `copies`.
+  Custom resources of OpenShift's cluster operators (MachineConfig, MachineConfigPool,
+  APIRequestCount, `config.openshift.io`, `operator.openshift.io`, the Machine API and more) get
+  `platform: true` (their `cat` stays `crd`) and form the page's `platform` category, hidden by
+  default (`show=platform` in the hash).
 - CI: `lab.yml` runs the end-to-end tests on a kuberito lab (`kuberito up --profile full`,
   `make lab-test`, `make page-check`) on pull requests, pushes to `main`, weekly and on demand,
   with kuberito installed from its release (version pinned, checksum and cosign signature

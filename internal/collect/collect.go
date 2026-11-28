@@ -222,6 +222,7 @@ func Collect(ctx context.Context, src Source, o Options) (*snapshot.Snapshot, er
 	}
 	snap.Cluster.Distro, snap.Cluster.DistroSignals = detectDistro(groups, snap.Cluster.ServerHost, version, providerIDs, nodeLabels)
 	snap.Resources, snap.Edges = b.finish()
+	snap.Resources, snap.Edges = collapseCopiedCSVs(snap.Resources, snap.Edges)
 	for _, a := range apis {
 		if a.Group == argoGroup && a.Resource == "applications" {
 			snap.Cluster.ArgoCD = attributeArgoCD(snap.Resources, todo)
@@ -372,6 +373,8 @@ func (b *builder) base(spec kindSpec, api APIResource, ns, name string, created 
 			Team:    team,
 			Labels:  labels,
 			Facts:   facts,
+			// custom resources of the cluster platform (OpenShift cluster operators)
+			Platform: spec.Cat == CatCRD && platformGroups[api.Group],
 		},
 	}
 }
@@ -546,6 +549,50 @@ func (b *builder) finish() ([]snapshot.Resource, []snapshot.Edge) {
 	return res, edges
 }
 
+// collapseCopiedCSVs folds the ClusterServiceVersions that OLM copies into every namespace an
+// operator watches (label olm.copiedFrom: <namespace of the original>) into the original, which
+// counts them in the volatile fact copies. A copy whose original was not collected stays.
+func collapseCopiedCSVs(res []snapshot.Resource, edges []snapshot.Edge) ([]snapshot.Resource, []snapshot.Edge) {
+	const csv = "operators.coreos.com/ClusterServiceVersion"
+	byID := map[string]int{}
+	for i, r := range res {
+		byID[r.ID] = i
+	}
+	dropped := map[string]bool{}
+	for _, r := range res {
+		from := r.Labels["olm.copiedFrom"]
+		if from == "" || from == r.NS || snapshot.GroupKind(r.Group, r.Kind) != csv {
+			continue
+		}
+		i, ok := byID[snapshot.ID(r.Group, r.Kind, from, r.Name)]
+		if !ok {
+			continue
+		}
+		orig := &res[i]
+		if orig.Facts == nil {
+			orig.Facts = map[string]any{}
+		}
+		orig.Facts["copies"] = asInt(orig.Facts["copies"]) + 1
+		dropped[r.ID] = true
+	}
+	if len(dropped) == 0 {
+		return res, edges
+	}
+	out := res[:0]
+	for _, r := range res {
+		if !dropped[r.ID] {
+			out = append(out, r)
+		}
+	}
+	kept := edges[:0]
+	for _, e := range edges {
+		if !dropped[e.From] && !dropped[e.To] {
+			kept = append(kept, e)
+		}
+	}
+	return out, kept
+}
+
 func subset(sel, labels map[string]string) bool {
 	for k, v := range sel {
 		if labels[k] != v {
@@ -620,6 +667,7 @@ var volatile = map[string]bool{
 	"last_rollout": true, "last_run": true, "jobs": true, "archs": true, "phase": true, "node": true,
 	"volume": true, "claim": true, "field_managers": true, "missing_refs": true, "selects_none": true,
 	"helm_revision": true, "helm_status": true, "orphan": true, "owner_missing": true, "manager_raw": true,
+	"copies": true,
 }
 
 // Volatile reports whether a fact stays out of the fingerprint. compare uses it to name the

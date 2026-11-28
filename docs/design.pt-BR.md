@@ -172,7 +172,8 @@ o arquivo sai do cache, então é a saída com mais chance de ser compartilhada.
 | config | ConfigMap (sem `kube-root-ca.crt`, `openshift-service-ca.crt`), Secret, ServiceAccount (sem o `default`, salvo com identidade de nuvem ou pull secret) | Secrets `helm.sh/release.v1` agrupados como estado do Helm |
 | storage | PVC, PV, StorageClass, VolumeSnapshot | kinds de escopo de cluster ganham setor próprio |
 | policy | HPA, PDB, ResourceQuota, LimitRange, Role, RoleBinding | PDB afeta drain e cutover |
-| CRDs | recursos customizados | agrupados por API group; os kinds do Karpenter e do EKS Auto Mode ganham fatos próprios (abaixo) |
+| CRDs | recursos customizados | agrupados por API group; os kinds do Karpenter e do EKS Auto Mode ganham fatos próprios (abaixo). As ClusterServiceVersions que o OLM copia em todo namespace observado (label `olm.copiedFrom`) se fundem na original, que as conta no fato volátil `copies` |
+| platform | custom resources dos cluster operators do OpenShift: os grupos `machineconfiguration.openshift.io` (MachineConfig, MachineConfigPool), `apiserver.openshift.io` (APIRequestCount), `config.openshift.io`, `operator.openshift.io` e os grupos `*.operator.openshift.io` de cada operator, `machine.openshift.io`, `autoscaling.openshift.io`, `tuned.openshift.io`, `cloudcredential.openshift.io`, `console.openshift.io` | o `cat` continua `crd` com `platform: true`; a página mostra esses recursos como categoria própria, oculta por padrão (`show=platform` no hash). A plataforma de destino os substitui |
 | sistema | namespaces que casam com `^(kube-system\|kube-public\|kube-node-lease\|local-path-storage\|openshift(-.*)?\|amazon-.*\|aws-.*\|gke-.*\|azure-.*)$` | escondidos por padrão (`collect --system-ns`); os do Kubernetes por nome exato, então `kube-prometheus-stack` é aplicação |
 
 A marca de sistema é gravada na coleta: snapshots do cache anteriores a uma mudança do padrão
