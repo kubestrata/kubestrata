@@ -1,0 +1,59 @@
+# kubestrata-reader: read-only access for `kubestrata collect`, Secrets included.
+#
+# kubestrata lists every kind the cluster serves (custom resources included) and gets one object,
+# the kube-system Namespace (cluster identity). It reads Secrets as metadata only, through the
+# server-side Table, but RBAC has no metadata-only permission: list on secrets lets the holder of
+# this role read their values with any other client. When that is not acceptable, use
+# kubestrata-reader-no-secrets.yaml and `kubestrata collect --no-secrets`.
+#
+# Only list on everything: subresources (pods/exec, pods/attach, nodes/proxy) take get or create,
+# never list, so none of them is granted. No watch, no write verb.
+#
+# Use (README, "Permissions"):
+#   kubectl apply -f deploy/rbac/kubestrata-reader.yaml
+#   kubectl create token kubestrata-reader -n kubestrata --duration=1h   # short-lived token
+#   kubectl delete -f deploy/rbac/kubestrata-reader.yaml                 # when the inventory is done
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubestrata
+  labels:
+    app.kubernetes.io/name: kubestrata
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubestrata-reader
+  namespace: kubestrata
+  labels:
+    app.kubernetes.io/name: kubestrata
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubestrata-reader
+  labels:
+    app.kubernetes.io/name: kubestrata
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["list"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    resourceNames: ["kube-system"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubestrata-reader
+  labels:
+    app.kubernetes.io/name: kubestrata
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubestrata-reader
+subjects:
+  - kind: ServiceAccount
+    name: kubestrata-reader
+    namespace: kubestrata

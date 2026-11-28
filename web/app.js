@@ -574,6 +574,7 @@
       if (c.argocd) row(t, "argo cd", argoText(c.argocd), c.argocd.managed ? null : "eol");
       row(t, "resources", s.resources.length);
       row(t, "edges", (s.edges || []).length);
+      if (skippedOf(s).length) row(t, "skipped kinds", skippedOf(s).join(", ") + " (collect --skip-kinds, --no-secrets)", "eol");
       box.appendChild(t);
       box.appendChild(el("h3", null, "managers"));
       var mt = el("table"), mc = {};
@@ -616,6 +617,8 @@
       box.appendChild(lt);
     }
   }
+  // kinds the collection left out on purpose (collect --skip-kinds, --no-secrets)
+  function skippedOf(s) { return (s.scope && s.scope.skipped_kinds) || []; }
   function errors(box, s, title) {
     if (!(s.errors || []).length) return;
     box.appendChild(el("h3", null, title));
@@ -660,6 +663,9 @@
       });
       if (ca.argocd || cb.argocd) row3(t, "argo cd", ca.argocd && argoText(ca.argocd), cb.argocd && argoText(cb.argocd));
       row3(t, "resources", sa.resources.length, sb.resources.length);
+      if (skippedOf(sa).length || skippedOf(sb).length) {
+        row3(t, "skipped kinds", skippedOf(sa).join(", ") || "—", skippedOf(sb).join(", ") || "—", "eol");
+      }
       box.appendChild(t);
       box.appendChild(el("h3", null, "states (shown resources)"));
       var c = stateCounts();

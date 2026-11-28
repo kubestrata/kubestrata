@@ -26,8 +26,38 @@ type Options struct {
 	SystemNS    string
 	TeamKeys    []string
 	CRDs        bool
+	// SkipKinds are kinds not to list: Kind (any group) or group/Kind, core for the core group,
+	// case-insensitive (Secret, core/Secret, route.openshift.io/Route).
+	SkipKinds   []string
 	Concurrency int
 	Now         func() time.Time
+}
+
+// SkipMatcher reads SkipKinds entries into a match function.
+func SkipMatcher(entries []string) (func(group, kind string) bool, error) {
+	type key struct{ group, kind string }
+	anyGroup := map[string]bool{}
+	exact := map[key]bool{}
+	for _, raw := range entries {
+		e := strings.TrimSpace(raw)
+		parts := strings.Split(e, "/")
+		switch {
+		case e == "" || strings.ContainsAny(e, " \t") || len(parts) > 2 || parts[len(parts)-1] == "":
+			return nil, fmt.Errorf("skip kinds: %q is not Kind or group/Kind (core/Secret, route.openshift.io/Route)", raw)
+		case len(parts) == 1:
+			anyGroup[strings.ToLower(e)] = true
+		default:
+			g := strings.ToLower(parts[0])
+			if g == "core" {
+				g = ""
+			}
+			exact[key{g, strings.ToLower(parts[1])}] = true
+		}
+	}
+	return func(group, kind string) bool {
+		k := strings.ToLower(kind)
+		return anyGroup[k] || exact[key{strings.ToLower(group), k}]
+	}, nil
 }
 
 type listed struct {
@@ -64,6 +94,10 @@ func Collect(ctx context.Context, src Source, o Options) (*snapshot.Snapshot, er
 	sysRE, err := regexp.Compile(o.SystemNS)
 	if err != nil {
 		return nil, fmt.Errorf("system namespace pattern: %w", err)
+	}
+	skip, err := SkipMatcher(o.SkipKinds)
+	if err != nil {
+		return nil, err
 	}
 	version, err := src.ServerVersion(ctx)
 	if err != nil {
@@ -107,9 +141,18 @@ func Collect(ctx context.Context, src Source, o Options) (*snapshot.Snapshot, er
 		return nil, fmt.Errorf("discovery returned no resources")
 	}
 	groups := map[string]bool{}
+	skipped := map[string]bool{}
 	var todo []listed
 	for _, a := range apis {
 		groups[a.Group] = true
+		if skip(a.Group, a.Kind) {
+			gk := snapshot.GroupKind(a.Group, a.Kind)
+			if !skipped[gk] {
+				skipped[gk] = true
+				snap.Scope.SkippedKinds = append(snap.Scope.SkippedKinds, gk)
+			}
+			continue
+		}
 		spec, ok := specFor(a.Group, a.Resource)
 		if !ok {
 			if !a.CRD || !o.CRDs {
@@ -154,7 +197,7 @@ func Collect(ctx context.Context, src Source, o Options) (*snapshot.Snapshot, er
 	}
 	wg.Wait()
 
-	b := &builder{o: o, sysRE: sysRE, byUID: map[string]*item{}, nsTeam: map[string]string{}}
+	b := &builder{o: o, sysRE: sysRE, byUID: map[string]*item{}, nsTeam: map[string]string{}, skipped: skipped}
 	for _, l := range todo {
 		if l.spec.Mode == modeNamespaces {
 			b.namespaces(snap, l.objs)
@@ -196,6 +239,7 @@ type builder struct {
 	byUID    map[string]*item
 	nsTeam   map[string]string
 	nodeArch map[string]string
+	skipped  map[string]bool // group/Kind left out by SkipKinds: references to them are not missing
 }
 
 func (b *builder) namespaces(snap *snapshot.Snapshot, objs []unstructured.Unstructured) {
@@ -445,7 +489,7 @@ func (b *builder) finish() ([]snapshot.Resource, []snapshot.Edge) {
 			id := snapshot.ID(r.group, r.kind, r.ns, r.name)
 			if _, ok := byID[id]; ok && id != it.res.ID {
 				edges = append(edges, snapshot.Edge{From: it.res.ID, To: id, Rel: r.rel})
-			} else if !(r.kind == "ServiceAccount" && r.name == "default") {
+			} else if !(r.kind == "ServiceAccount" && r.name == "default") && !b.skipped[snapshot.GroupKind(r.group, r.kind)] {
 				missing = append(missing, r.kind+"/"+r.name)
 			}
 		}

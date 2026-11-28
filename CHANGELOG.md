@@ -25,6 +25,16 @@ All notable changes to this project are documented here. Versions follow
   `cluster.argocd` (`applications`, `remote`, `managed`, `from_status`) when the cluster serves the
   Application kind; the page says "Argo CD installed, no managed objects found" when nothing is
   attributed.
+- `collect --skip-kinds Kind,group/Kind` leaves kinds out (recorded as `scope.skipped_kinds`), and
+  `collect --no-secrets` runs the inventory with a role that cannot list Secrets. Without Secrets,
+  the Helm release state and the links to Secrets are lost; Helm is still detected from object
+  labels, and references to skipped kinds are not reported as missing.
+- Published RBAC: [`deploy/rbac/kubestrata-reader.yaml`](deploy/rbac/kubestrata-reader.yaml)
+  (`list` on every kind) and
+  [`deploy/rbac/kubestrata-reader-no-secrets.yaml`](deploy/rbac/kubestrata-reader-no-secrets.yaml),
+  each with a ServiceAccount and a ClusterRoleBinding; README "Permissions" shows how to collect
+  with a short-lived ServiceAccount token. They replace the `inventory-reader` role the design
+  mentioned but never shipped.
 
 ## 0.1.4 — 2026-11-27
 

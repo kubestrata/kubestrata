@@ -107,6 +107,50 @@ kubestrata collect -c kuberito-source -c kuberito-target
 kubestrata compare -c kuberito-source -c kuberito-target --open
 ```
 
+## Permissões
+
+O kubestrata precisa de `list` nos kinds que inventaria e de `get` no namespace `kube-system` (a
+identidade do cluster), nada além disso. Dois ClusterRoles vêm em [`deploy/rbac/`](deploy/rbac/),
+cada um com uma ServiceAccount e um ClusterRoleBinding no namespace `kubestrata`:
+
+| Arquivo | Concede | Colete com |
+|---|---|---|
+| [`kubestrata-reader.yaml`](deploy/rbac/kubestrata-reader.yaml) | `list` em todo kind, custom resources inclusive | `kubestrata collect` |
+| [`kubestrata-reader-no-secrets.yaml`](deploy/rbac/kubestrata-reader-no-secrets.yaml) | `list` nos kinds do inventário e em grupos comuns de custom resources, nunca em Secrets | `kubestrata collect --no-secrets` |
+
+O kubestrata lê Secrets só como metadata, mas o RBAC não tem permissão só de metadata: `list` em
+Secrets deixa quem tem a permissão ler os valores com outro cliente. Sem Secrets (`--no-secrets`,
+o mesmo que `--skip-kinds core/Secret`), o inventário perde o estado das releases Helm (release,
+revisão e status, guardados em Secrets `helm.sh/release.v1`) e as ligações de workloads, Ingresses
+e Gateways para Secrets. O Helm continua detectado pelos labels e annotations dos objetos, e
+referências a Secrets não aparecem como faltando. Um grupo de custom resource que o
+`kubestrata-reader-no-secrets` não lista aparece como `Forbidden` nos erros do snapshot: acrescente
+o grupo ao role, ou deixe o kind de fora com `--skip-kinds <grupo>/<Kind>`. Os kinds pulados ficam
+registrados no snapshot (`scope.skipped_kinds`) e aparecem na página.
+
+Colete com um token de ServiceAccount de vida curta em vez da sua credencial pessoal, a partir de
+um kubeconfig que só tem esse token (a CA do cluster vem do seu contexto atual):
+
+```sh
+kubectl apply -f deploy/rbac/kubestrata-reader-no-secrets.yaml
+dir="$(mktemp -d)"; ctx=source
+kubectl config view --minify --raw -o jsonpath='{.clusters[0].cluster.certificate-authority-data}' \
+  | base64 -d > "$dir/ca.crt"
+KUBECONFIG="$dir/kubeconfig" kubectl config set-cluster "$ctx" --embed-certs \
+  --server="$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')" \
+  --certificate-authority="$dir/ca.crt"
+KUBECONFIG="$dir/kubeconfig" kubectl config set-credentials "$ctx" \
+  --token="$(kubectl create token kubestrata-reader-no-secrets -n kubestrata --duration=1h)"
+KUBECONFIG="$dir/kubeconfig" kubectl config set-context "$ctx" --cluster="$ctx" --user="$ctx"
+kubestrata --kubeconfig "$dir/kubeconfig" collect -c "$ctx" --no-secrets
+rm -rf "$dir"
+kubectl delete -f deploy/rbac/kubestrata-reader-no-secrets.yaml   # quando o inventário terminar
+```
+
+O `render -c source` e o `compare` leem o cache depois, sem kubeconfig nenhum. Se o seu kubeconfig
+aponta para um arquivo de CA (`certificate-authority`) em vez de embuti-la, passe esse arquivo no
+`--certificate-authority`.
+
 ## Telas
 
 Visão radial do `kuberito-source`:

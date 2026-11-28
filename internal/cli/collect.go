@@ -55,6 +55,8 @@ type collectFlags struct {
 	systemNS    string
 	teamKeys    []string
 	snapshotOut string
+	skipKinds   []string
+	noSecrets   bool
 }
 
 func newCollectCmd(g *globals) *cobra.Command {
@@ -66,11 +68,18 @@ func newCollectCmd(g *globals) *cobra.Command {
 			"per cluster to the local cache. A snapshot newer than --max-age is reused unless --force is set. " +
 			"--format json prints a summary per context; --snapshot-out also writes the snapshot itself as plain JSON.",
 		Example: "  kubestrata collect -c source -c target --force\n" +
+			"  kubestrata collect -c source --no-secrets   # role without list on secrets (deploy/rbac)\n" +
 			"  kubestrata collect -c source --snapshot-out source.json\n" +
 			"  kubestrata collect --all --snapshot-out ./snapshots/   # existing directory: <cluster_id>.json each",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := g.checkFormat(); err != nil {
+				return err
+			}
+			if f.noSecrets {
+				f.skipKinds = append(f.skipKinds, "core/Secret")
+			}
+			if _, err := collect.SkipMatcher(f.skipKinds); err != nil {
 				return err
 			}
 			targets, err := g.resolveContexts(f.contexts, f.all)
@@ -143,6 +152,12 @@ func newCollectCmd(g *globals) *cobra.Command {
 	cmd.Flags().StringSliceVar(&f.teamKeys, "team-label", collect.DefaultTeamKeys, "label/annotation keys that name the owning team, in order")
 	cmd.Flags().StringVar(&f.snapshotOut, "snapshot-out", "",
 		"also write the plain JSON snapshot to this file (one context), or into this existing directory as <cluster_id>.json")
+	cmd.Flags().StringSliceVar(&f.skipKinds, "skip-kinds", nil,
+		"kinds not to list, as Kind or group/Kind with core for the core group (e.g. core/Secret,route.openshift.io/Route); "+
+			"recorded in the snapshot scope")
+	cmd.Flags().BoolVar(&f.noSecrets, "no-secrets", false,
+		"do not list Secrets (same as --skip-kinds core/Secret), for a role without list on secrets: Helm release "+
+			"state and links to Secrets are lost")
 	return cmd
 }
 
@@ -219,7 +234,7 @@ func collectOne(ctx context.Context, g *globals, c *cache.Cache, f *collectFlags
 		return fail(err)
 	}
 	snap, err := collect.Collect(ctx, src, collect.Options{Context: name, ToolVersion: g.version,
-		SystemNS: f.systemNS, TeamKeys: f.teamKeys, CRDs: f.crds})
+		SystemNS: f.systemNS, TeamKeys: f.teamKeys, CRDs: f.crds, SkipKinds: f.skipKinds})
 	if err != nil {
 		return fail(err)
 	}

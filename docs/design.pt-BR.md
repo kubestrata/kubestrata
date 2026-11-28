@@ -90,8 +90,16 @@ nos primeiros anéis, que o `30d` mantém separadas, então o `30d` continua o p
 - Carga no API server: só `list`/`get`, paginação `limit=500`, QPS/burst explícitos, no máximo 4
   contextos e 8 kinds em paralelo por contexto.
 - RBAC: um `403` num kind vai para `errors[]` e a coleta continua. Listar Secrets dá acesso de
-  leitura aos valores, mesmo que o kubestrata só peça metadata; a documentação traz um ClusterRole
-  `inventory-reader` sugerido.
+  leitura aos valores, mesmo que o kubestrata só peça metadata. Dois ClusterRoles vêm em
+  `deploy/rbac/`: `kubestrata-reader` (`list` em todo kind, `get` no namespace `kube-system`) e
+  `kubestrata-reader-no-secrets` (os kinds do inventário e grupos comuns de custom resources, sem
+  Secrets), para o `collect --no-secrets`. Nenhum dos dois concede `get` em outros objetos, então
+  nenhum subresource (`pods/exec`, `nodes/proxy`) fica ao alcance.
+- `--skip-kinds Kind,grupo/Kind` (`core` para o grupo core, sem diferenciar maiúsculas) deixa kinds
+  de fora; `--no-secrets` é o `--skip-kinds core/Secret`. Os kinds pulados vão para
+  `scope.skipped_kinds`, e uma referência a um kind pulado não entra em `missing_refs`. Sem Secrets
+  se perdem o estado das releases Helm (Secrets `helm.sh/release.v1`) e as arestas para Secrets; o
+  Helm continua detectado por labels e annotations.
 
 ## Sanitização (fronteira de segurança)
 

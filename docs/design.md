@@ -87,8 +87,16 @@ which `30d` keeps apart, so `30d` stays the default.
 - API server load: `list`/`get` only, `limit=500` pagination, explicit QPS/burst, at most 4
   contexts and 8 kinds in flight per context.
 - RBAC: a `403` on a kind goes to `errors[]` and collection continues. Listing Secrets grants read
-  access to their values even though kubestrata only asks for metadata; the docs ship a suggested
-  `inventory-reader` ClusterRole.
+  access to their values even though kubestrata only asks for metadata. Two ClusterRoles ship in
+  `deploy/rbac/`: `kubestrata-reader` (`list` on every kind, `get` on the `kube-system` namespace)
+  and `kubestrata-reader-no-secrets` (the inventory kinds and common custom resource groups, no
+  Secrets), for `collect --no-secrets`. Neither grants `get` on other objects, so no subresource
+  (`pods/exec`, `nodes/proxy`) is reachable.
+- `--skip-kinds Kind,group/Kind` (`core` for the core group, case-insensitive) leaves kinds out;
+  `--no-secrets` is `--skip-kinds core/Secret`. Skipped kinds go to `scope.skipped_kinds`, and a
+  reference to a skipped kind is not a `missing_refs` entry. Without Secrets the Helm release state
+  (`helm.sh/release.v1` Secrets) and the edges to Secrets are lost; Helm is still detected from
+  labels and annotations.
 
 ## Sanitization (security boundary)
 

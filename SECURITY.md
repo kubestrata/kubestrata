@@ -6,8 +6,8 @@ kubestrata reads clusters with `list` and `get` only and writes nothing to them.
 
 | Area | What kubestrata does |
 |---|---|
-| Cluster access | the credentials of your kubeconfig, including exec plugins (`aws eks get-token`, `oc`); none are stored or printed |
-| Secrets | read as metadata only, through the server-side Table (`includeObject=Metadata`): type and key count, never values |
+| Cluster access | the credentials of your kubeconfig, including exec plugins (`aws eks get-token`, `oc`); none are stored or printed. Read-only ClusterRoles to collect with a ServiceAccount token: [`deploy/rbac/`](deploy/rbac/) (README, "Permissions") |
+| Secrets | read as metadata only, through the server-side Table (`includeObject=Metadata`): type and key count, never values. RBAC cannot grant metadata only: `list` on Secrets exposes their values to whoever holds it, so `collect --no-secrets` with `kubestrata-reader-no-secrets` avoids that permission |
 | Sanitization | the snapshot drops `last-applied-configuration`, env values, args, commands, Route TLS keys and cloud identity ids |
 | Local files | cache and site under the user cache dir with modes `0700` / `0600`; never sent anywhere; no telemetry |
 | HTML page | offline, Content-Security-Policy without network access; cluster strings rendered as text only |

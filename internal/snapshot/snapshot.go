@@ -75,9 +75,11 @@ type NodeSummary struct {
 
 // Scope records what the collector was asked to cover.
 type Scope struct {
-	Kinds    []string `json:"kinds"`
-	SystemNS string   `json:"system_ns"`
-	TeamKeys []string `json:"team_keys"`
+	Kinds []string `json:"kinds"`
+	// SkippedKinds are the served kinds left out on purpose (collect --skip-kinds, --no-secrets).
+	SkippedKinds []string `json:"skipped_kinds,omitempty"`
+	SystemNS     string   `json:"system_ns"`
+	TeamKeys     []string `json:"team_keys"`
 }
 
 // Namespace is the sector of the radial view.
@@ -168,6 +170,7 @@ func (s *Snapshot) Normalize() {
 		return a.Kind+"\x00"+a.NS+"\x00"+a.Reason < b.Kind+"\x00"+b.NS+"\x00"+b.Reason
 	})
 	sort.Strings(s.Scope.Kinds)
+	sort.Strings(s.Scope.SkippedKinds)
 	if s.Edges == nil {
 		s.Edges = []Edge{}
 	}

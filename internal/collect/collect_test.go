@@ -8,6 +8,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -49,6 +50,8 @@ type fakeSource struct {
 	objs    map[schema.GroupResource][]unstructured.Unstructured
 	secrets []SecretMeta
 	apis    []APIResource // served resources; nil serves resourceOf and Secrets
+	// secretCalls counts ListSecretsMeta calls
+	secretCalls atomic.Int32
 }
 
 func loadFake(t *testing.T) *fakeSource {
@@ -122,7 +125,10 @@ func (f *fakeSource) List(_ context.Context, r APIResource) ([]unstructured.Unst
 	}
 	return f.objs[schema.GroupResource{Group: r.Group, Resource: r.Resource}], nil
 }
-func (f *fakeSource) ListSecretsMeta(context.Context) ([]SecretMeta, error) { return f.secrets, nil }
+func (f *fakeSource) ListSecretsMeta(context.Context) ([]SecretMeta, error) {
+	f.secretCalls.Add(1)
+	return f.secrets, nil
+}
 
 var fixedNow = func() time.Time { return time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC) }
 
@@ -662,5 +668,88 @@ func TestLocalDestination(t *testing.T) {
 		if got := localDestination(map[string]any{"server": dest[0], "name": dest[1]}); got != want {
 			t.Errorf("%v: local %v, want %v", dest, got, want)
 		}
+	}
+}
+
+func TestSkipMatcher(t *testing.T) {
+	m, err := SkipMatcher([]string{"core/Secret", "route.openshift.io/Route", "machineconfig", " Pod "})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		group, kind string
+		want        bool
+	}{
+		{"", "Secret", true}, {"example.com", "Secret", false}, {"route.openshift.io", "Route", true},
+		{"gateway.networking.k8s.io", "HTTPRoute", false}, {"machineconfiguration.openshift.io", "MachineConfig", true},
+		{"", "Pod", true}, {"", "ConfigMap", false}, {"Route.OpenShift.io", "route", true},
+	} {
+		if got := m(c.group, c.kind); got != c.want {
+			t.Errorf("%s/%s: skipped %v, want %v", c.group, c.kind, got, c.want)
+		}
+	}
+	for _, bad := range [][]string{{""}, {"a/b/c"}, {"core/"}, {"route.openshift.io/ Route"}} {
+		if _, err := SkipMatcher(bad); err == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+}
+
+// Without Secrets the inventory runs with a role that cannot list them: no Secret items, no
+// ListSecretsMeta call, references to Secrets are not reported as missing, and Helm is still
+// detected from the labels of the objects (K20).
+func TestSkipSecrets(t *testing.T) {
+	src := loadFake(t)
+	snap, err := Collect(context.Background(), src, Options{Context: "lab", ToolVersion: "test", CRDs: true, Now: fixedNow,
+		SkipKinds: []string{"core/Secret"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := src.secretCalls.Load(); n != 0 {
+		t.Errorf("ListSecretsMeta called %d times", n)
+	}
+	for _, r := range snap.Resources {
+		if r.Kind == "Secret" {
+			t.Errorf("Secret collected: %s", r.ID)
+		}
+		for _, ref := range toStrings(r.Facts["missing_refs"]) {
+			if strings.HasPrefix(ref, "Secret/") {
+				t.Errorf("%s: skipped Secret reported missing: %s", r.ID, ref)
+			}
+		}
+	}
+	if got := snap.Scope.SkippedKinds; len(got) != 1 || got[0] != "core/Secret" {
+		t.Errorf("skipped kinds = %v", got)
+	}
+	for _, k := range snap.Scope.Kinds {
+		if k == "core/Secret" {
+			t.Error("core/Secret listed as collected")
+		}
+	}
+	if len(snap.Errors) != 0 {
+		t.Errorf("errors: %+v", snap.Errors)
+	}
+	if m := find(t, snap, "apps/Deployment/payments/api").Manager; m != MgrHelm {
+		t.Errorf("payments/api manager without Secrets = %s, want helm from its labels", m)
+	}
+	if hasEdge(snap, "apps/Deployment/payments/api", "core/Secret/payments/api-db", RelEnvFrom) {
+		t.Error("edge to a skipped Secret")
+	}
+	// a skipped custom kind is left out the same way
+	snap, err = Collect(context.Background(), loadFake(t), Options{Context: "lab", ToolVersion: "test", CRDs: true, Now: fixedNow,
+		SkipKinds: []string{"route.openshift.io/Route"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range snap.Resources {
+		if r.Kind == "Route" {
+			t.Errorf("Route collected: %s", r.ID)
+		}
+	}
+	if got := snap.Scope.SkippedKinds; len(got) != 1 || got[0] != "route.openshift.io/Route" {
+		t.Errorf("skipped kinds = %v", got)
+	}
+	if _, err := Collect(context.Background(), loadFake(t), Options{SkipKinds: []string{"a/b/c"}}); err == nil {
+		t.Error("bad --skip-kinds entry accepted")
 	}
 }
