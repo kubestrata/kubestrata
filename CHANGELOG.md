@@ -112,8 +112,8 @@ All notable changes to this project are documented here. Versions follow
   a single maintainer.
 - CI: `lab.yml` runs the end-to-end tests on a kuberito lab (`kuberito up --profile full`,
   `make lab-test`, `make page-check`) on pull requests, pushes to `main`, weekly and on demand,
-  with kuberito installed from its release (version pinned, checksum and cosign signature
-  verified). It is skipped until the repository variable `KUBERITO_PUBLIC` is `true`.
+  with kuberito v0.2.0 installed from its release (archive sha256 pinned, checksum and cosign
+  signature verified). The repository variable `KUBERITO_PUBLIC` turns it on.
 
 ## 0.1.4 — 2026-11-27
 
