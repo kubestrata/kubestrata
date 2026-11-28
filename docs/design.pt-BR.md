@@ -2,7 +2,8 @@
 
 [English](design.md)
 
-Status: design pré-release da v0.1.0 (F1). As decisões aqui valem até o código dizer o contrário.
+Status: o design das releases 0.1.x (F1) e do trabalho rumo à 0.2.0. As decisões aqui valem até o
+código dizer o contrário.
 A versão em inglês (`design.md`) é a oficial; esta é a tradução.
 
 ## Objetivo
@@ -26,7 +27,7 @@ flowchart LR
 ```
 
 `render` e `compare` nunca falam com cluster. Atualizar o cache é sempre explícito
-(`collect --force`, `--max-age` ou `r` na TUI).
+(`collect --force`, `--max-age`).
 
 ## Eixo do tempo
 
@@ -154,7 +155,7 @@ imprime e grava para compartilhar, e deixa o cache como está:
 | um time tirado da annotation de namespace `openshift.io/requester` (um nome de usuário) | `redacted-1`, `redacted-2` |
 
 Vale para o `contexts` (texto e JSON), a saída do `collect` e os arquivos do `--snapshot-out`, o
-`cache ls`, o `diff` e a saída e o site do `render` e do `compare` (toda string dos snapshots e da
+`cache ls`, o `diff`, o `summary` e a saída e o site do `render` e do `compare` (toda string dos snapshots e da
 comparação, mensagens de erro incluídas). O erro de qualquer comando, impresso no stderr, passa pela
 mesma máscara, porque costuma citar o contexto. O `compare` e o `diff` pareiam os snapshots reais
 primeiro e mascaram o resultado, então os estados não mudam. Os ids de cluster são hashes e ficam
@@ -417,14 +418,14 @@ minutos), o que mudou num workload (imagem, réplicas, requests) e prova de limp
 `gone` depois de um teste). Ainda não há site para o `diff`: os arquivos de dados são indexados
 pelo id do cluster (`data/<cluster_id>.js`), e os dois snapshots têm o mesmo.
 
-## CLI e TUI
+## CLI
 
-Fang v2 sobre Cobra nos comandos; Bubble Tea v2, Bubbles v2, Lip Gloss v2 e Huh na TUI.
-`--format text|json` em todo comando.
+Fang v2 sobre Cobra nos comandos, Lip Gloss v2 nas tabelas. `--format text|json` em todo comando.
+Não há TUI: `kubestrata` sozinho imprime a ajuda, e uma TUI interativa (contextos, idade do cache,
+refresh, render, compare, abrir) está na F3 (Fases).
 
 | Comando | Faz |
 |---|---|
-| `kubestrata` | TUI: contextos, idade do cache, status; `r` refresh, `g` gerar, `c` comparar, `o` abrir |
 | `kubestrata contexts` | contextos do kubeconfig (sem acessar cluster) |
 | `kubestrata collect [-c ctx]... [--all] [--max-age 6h] [--force] [--snapshot-out arquivo\|dir]` | grava no cache; reaproveita snapshot mais novo que `--max-age`; `--format json` imprime um resumo por contexto, `--snapshot-out` também grava o snapshot em JSON puro (`0600`): num arquivo para um contexto, como `<cluster_id>.json` num diretório existente para vários |
 | `kubestrata render [-c ctx] [--scale 30m\|1h\|5d\|10d\|30d\|years\|log\|auto] [--rings 30m,2h,1d,1y] [--axis created\|changed] [-o dir] [--open]` | site a partir do cache |
@@ -464,6 +465,6 @@ em `file://`), `json/<cluster_id>.json` para máquina; o `compare` acrescenta `d
 
 | Fase | Escopo | Pronto quando |
 |---|---|---|
-| F1 (v0.1.0) | contexts, collect + cache, render, compare, TUI básica, saída JSON | e2e verde em dois clusters locais; HTML golden idêntico entre execuções; teste de não vazamento verde; página sem erro de JS no Chrome headless; 20k nós com pan e zoom medidos |
+| F1 (0.1.x, feita) | contexts, collect + cache, render, compare, diff, saída JSON | feito: e2e verde em dois clusters locais, HTML idêntico entre execuções, teste de não vazamento verde, página sem erro de JS no Chrome headless, 20k nós medidos. A TUI planejada aqui foi para a F3 |
 | F2 | unidades de migração, classificação (manager, estado, exposição, acoplamento à nuvem, fim de vida), `plan --format json\|csv\|md`, resumo por time, `--map-ns` | plano do fixture bate com uma verdade-base fixa |
-| F3 | site do diff temporal (o `diff` já existe na CLI e no JSON), checagem de imagem multi-arch, `kubectl strata` via Krew | decidido quando a F2 estiver em uso real |
+| F3 | site do diff temporal (o `diff` já existe na CLI e no JSON), checagem de imagem multi-arch, `kubectl strata` via Krew, TUI interativa | decidido quando a F2 estiver em uso real |

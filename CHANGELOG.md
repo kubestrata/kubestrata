@@ -99,6 +99,10 @@ All notable changes to this project are documented here. Versions follow
   fixtures and checks every output strictly against them, and the lab e2e checks the real
   snapshots and comparison. [docs/compatibility.md](docs/compatibility.md) (EN/PT-BR) says what
   `schema_version` 1 guarantees, what may change before 1.0 and the policy proposed from 1.0.
+- Docs match the code: the TUI planned for 0.1 is gone from the commands and moved to the F3 phase
+  of the design (`kubestrata` alone prints the help); the design no longer lists Bubble Tea, Bubbles
+  and Huh, which the code does not use; `--redact` lists `summary`; the status line links the
+  compatibility page.
 - CI: `lab.yml` runs the end-to-end tests on a kuberito lab (`kuberito up --profile full`,
   `make lab-test`, `make page-check`) on pull requests, pushes to `main`, weekly and on demand,
   with kuberito installed from its release (version pinned, checksum and cosign signature

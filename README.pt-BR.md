@@ -8,8 +8,8 @@
 
 [English](README.md)
 
-> **Status: 0.1.x, primeiras releases.** As interfaces ainda podem mudar antes da 1.0
-> ([CHANGELOG](CHANGELOG.md)).
+> **Status: 0.1.x, primeiras releases.** As interfaces ainda podem mudar antes da 1.0: veja em
+> [docs/compatibility.pt-BR.md](docs/compatibility.pt-BR.md) o que é estável, e o [CHANGELOG](CHANGELOG.md).
 
 Inventário de clusters Kubernetes em camadas de tempo, para planejar migração. O `kubestrata` lê
 os contextos do kubeconfig, coleta um inventário somente leitura e sanitizado num cache local e
@@ -221,7 +221,6 @@ Visão de comparação entre `kuberito-source` e `kuberito-target`:
 | `kubestrata compare -c source -c target` | equal / drift / pending / new e cobertura, HTML lado a lado |
 | `kubestrata diff -c source` | dois snapshots do mesmo cluster (o mais novo e o anterior, ou `--from`/`--to`): new / gone / drift / equal |
 | `kubestrata summary -c source` | resumo de migração em Markdown (ou JSON): recursos por categoria e kind, nodes por tipo de instância e zona, managers, maiores namespaces, kinds em fim de vida, objetos sem o dono esperado, cobertura de times, Argo CD |
-| `kubestrata` | TUI interativa (planejada) |
 
 `--format json` imprime um documento para máquina com `schema_version` 1, descrito pelos JSON
 Schemas em [`schemas/`](schemas/); o [docs/compatibility.pt-BR.md](docs/compatibility.pt-BR.md) diz o

@@ -2,7 +2,8 @@
 
 [Português](design.pt-BR.md)
 
-Status: pre-release design for v0.1.0 (F1). Decisions here are current until code says otherwise.
+Status: the design of the 0.1.x releases (F1) and of the work toward 0.2.0. Decisions here are
+current until code says otherwise.
 
 ## Goal
 
@@ -25,7 +26,7 @@ flowchart LR
 ```
 
 `render` and `compare` never talk to a cluster. Refreshing the cache is always explicit
-(`collect --force`, `--max-age`, or `r` in the TUI).
+(`collect --force`, `--max-age`).
 
 ## Time axis
 
@@ -151,7 +152,7 @@ writes for sharing, and leaves the cache as it is:
 | a team taken from the namespace annotation `openshift.io/requester` (a user name) | `redacted-1`, `redacted-2` |
 
 It applies to `contexts` (text and JSON), `collect` output and `--snapshot-out` files, `cache ls`,
-`diff`, and the `render` and `compare` output and site (every string of the snapshots and of the
+`diff`, `summary`, and the `render` and `compare` output and site (every string of the snapshots and of the
 comparison, error messages included). Every command's error, printed on stderr, goes through the
 same mask, since it often names the context. `compare` and `diff` pair the real snapshots first and
 mask the result, so the states do not change. Cluster ids are hashes and stay as they are. An
@@ -409,14 +410,14 @@ job created between two moments (NodeClaims come and go in minutes), what change
 no site for `diff` yet: the data files are keyed by cluster id (`data/<cluster_id>.js`), and both
 snapshots have the same one.
 
-## CLI and TUI
+## CLI
 
-Fang v2 over Cobra for commands; Bubble Tea v2, Bubbles v2, Lip Gloss v2 and Huh for the TUI.
-`--format text|json` on every command.
+Fang v2 over Cobra for commands, Lip Gloss v2 for the tables. `--format text|json` on every
+command. There is no TUI: `kubestrata` alone prints the help, and an interactive TUI (contexts,
+cache age, refresh, render, compare, open) is in F3 (Phases).
 
 | Command | Does |
 |---|---|
-| `kubestrata` | TUI: contexts, cache age, status; `r` refresh, `g` generate, `c` compare, `o` open |
 | `kubestrata contexts` | kubeconfig contexts (no cluster access) |
 | `kubestrata collect [-c ctx]... [--all] [--max-age 6h] [--force] [--snapshot-out file\|dir]` | writes the cache; reuses a snapshot newer than `--max-age`; `--format json` prints a summary per context, `--snapshot-out` also writes the snapshot as plain JSON (`0600`): to a file for one context, as `<cluster_id>.json` into an existing directory for several |
 | `kubestrata render [-c ctx] [--scale 30m\|1h\|5d\|10d\|30d\|years\|log\|auto] [--rings 30m,2h,1d,1y] [--axis created\|changed] [-o dir] [--open]` | site from the cache |
@@ -454,6 +455,6 @@ for machines; `compare` adds `data/compare.js` (`window.KUBESTRATA_COMPARE = {..
 
 | Phase | Scope | Done when |
 |---|---|---|
-| F1 (v0.1.0) | contexts, collect + cache, render, compare, basic TUI, JSON output | e2e green on two local clusters; golden HTML identical across runs; no-leak test green; page loads with no JS error in headless Chrome; 20k nodes pan and zoom measured |
+| F1 (0.1.x, done) | contexts, collect + cache, render, compare, diff, JSON output | done: e2e green on two local clusters, HTML identical across runs, no-leak test green, page loads with no JS error in headless Chrome, 20k nodes measured. The TUI planned here moved to F3 |
 | F2 | migration units, classification (manager, state, exposure, cloud coupling, end of life), `plan --format json\|csv\|md`, per-team brief, `--map-ns` | plan for the fixture matches a fixed ground truth |
-| F3 | site for the temporal diff (`diff` is in the CLI and JSON already), multi-arch image check, `kubectl strata` via Krew | decided once F2 is in real use |
+| F3 | site for the temporal diff (`diff` is in the CLI and JSON already), multi-arch image check, `kubectl strata` via Krew, interactive TUI | decided once F2 is in real use |

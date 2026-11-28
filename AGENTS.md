@@ -33,7 +33,7 @@ Ferramenta de domínio com repo próprio, como o `costgate`.
 | `internal/snapshot` | contrato JSON `schema_version` 1 | gzip; recusa versão maior |
 | `internal/cache` | `~/Library/Caches/kubestrata` (`KUBESTRATA_CACHE_DIR`) | `clusters/<id>/<stamp>.json.gz` + `contexts.json`; escrita atômica |
 | `internal/compare` | Go puro, determinístico | pares por `group/Kind/ns/name`: equal, drift (fatos fora do `volatile` de `collect.go`), pending, new; resumo e cobertura por namespace |
-| TUI (F1) | Bubble Tea v2, Bubbles v2, Lip Gloss v2, Huh v2 (`charm.land/*`) | a implementar |
+| TUI | — | não existe; foi do plano da 0.1 (F1) para a F3 do `docs/design.md` |
 | Site (F1) | HTML+CSS+JS inline (`web/`), zero CDN, canvas 2D, layout polar determinístico | `render` (um cluster) e `compare` (dois painéis, modo de cor `state`, tabela de cobertura); modelo de referência: `leosavio-org/knowledge/views/grafo.html` |
 | CI | GitHub Actions `.github/workflows/ci.yml` + `lab.yml` | lint (gofmt, vet incl. tag `lab`, staticcheck v0.8.2, cross-compile darwin/linux × arm64/amd64) e `go test -race`; `lab.yml` instala o kuberito da release (versão fixada, checksum + cosign), `kuberito up --profile full`, `make lab-test` e `make page-check`, só com a variável `KUBERITO_PUBLIC=true` (o kuberito é público) |
 | Release | `.github/workflows/release.yml` (tag `v*`) | testes, binários darwin/linux × arm64/amd64, smoke do linux/amd64, `checksums.txt` assinado com cosign keyless, release no GitHub e `Formula/kubestrata.rb` no `kubestrata/homebrew-tap` (deploy key só de escrita no tap, secret `HOMEBREW_TAP_DEPLOY_KEY`; pré-release não mexe no tap) |
@@ -126,7 +126,7 @@ verdade-base do lab: 0 divergência, 0 vazamento.
 - [x] CI: `.github/workflows/ci.yml` (lint + test -race); primeira execução verde em 2026-11-18 (run 44340222456, `04f7c74`)
 - [x] Achados do workshop AWS: escalas 30m/1h, K1 `diff` (CLI/JSON), K2 verificado (fixture + workshop), K3, K4, K5 `--redact`, K6, K8 `--snapshot-out`
 - [ ] K1: site do `diff` (exige mudar a chave dos arquivos `data/<cluster_id>.js`); K7 custo por recurso a partir de export do Kubecost/OpenCost (fora desta rodada)
-- [ ] F1: TUI básica; teste de não vazamento sobre o site; golden de render
+- [ ] F3: TUI interativa (saiu do plano da F1); teste de não vazamento sobre o site; golden de render
 - [ ] F2: parear tradução de kind (Route/Ingress → HTTPRoute) e PVs de nome gerado nas unidades de migração
 - [x] CONTRIBUTING, CODE_OF_CONDUCT, SECURITY e CHANGELOG (`e8c436f`); repo público desde 2026-11-20
 - [x] v0.1.0: release (2026-11-26), Homebrew `kubestrata/tap/kubestrata`, `go install`, tarball assinado

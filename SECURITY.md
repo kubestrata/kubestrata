@@ -25,7 +25,7 @@ of EKS and AKS endpoint hosts, the `<cluster>.<base domain>` part of OpenShift A
 writes into context, cluster and user names, any 12-digit run in those names, and team names taken
 from the `openshift.io/requester` annotation, which are user names (`redacted-1`, `redacted-2`,
 the same mask for the same user in one run). It applies to the output and error messages of
-`contexts`, `collect` (and its `--snapshot-out` files), `cache ls`, `diff`, `render` and `compare`,
+`contexts`, `collect` (and its `--snapshot-out` files), `cache ls`, `diff`, `summary`, `render` and `compare`,
 and to the generated site; the cache keeps the real values. Use it for screenshots, shared
 terminals and files you hand over. It does not anonymize namespaces, resource names, images
 outside ECR, labels, custom domains (`shop.example.com`) or the user part of `oc login` names:

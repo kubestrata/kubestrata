@@ -53,7 +53,7 @@ line of [`go.mod`](../go.mod) (the release workflow reads it). A new Go advisory
 ## Repeat the checks on a release
 
 ```sh
-v=0.1.3
+v=0.1.4
 gh release download "v${v}" -R kubestrata/kubestrata -p "kubestrata_${v}_linux_amd64.tar.gz"
 tar -xzf "kubestrata_${v}_linux_amd64.tar.gz" kubestrata
 go version kubestrata                                   # Go toolchain the binary was built with

@@ -53,7 +53,7 @@ do [`go.mod`](../go.mod) (o workflow de release lê essa linha). Um advisory nov
 ## Repetir as checagens numa release
 
 ```sh
-v=0.1.3
+v=0.1.4
 gh release download "v${v}" -R kubestrata/kubestrata -p "kubestrata_${v}_linux_amd64.tar.gz"
 tar -xzf "kubestrata_${v}_linux_amd64.tar.gz" kubestrata
 go version kubestrata                                   # toolchain do Go que compilou o binário
