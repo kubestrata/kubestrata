@@ -135,8 +135,11 @@ de conta AWS, hosts de endpoint EKS/AKS, domínios de cluster OpenShift (`api.re
 `openshift.io/requester` (nomes de usuário) na saída e no site; o cache guarda os valores reais.
 
 Escalas de anéis (`render`/`compare --scale`, também trocáveis na página): `30m` e `1h` (12 anéis
-de 30 minutos ou 1 hora, para cluster novo), `5d`, `10d`, `30d`, `log` e anéis custom com sufixo de
-unidade, `--rings 30m,2h,1d,7d,30d` (número sem sufixo é dia).
+de 30 minutos ou 1 hora, para cluster novo), `5d`, `10d`, `30d` (o padrão), `years` (30d, 90d, 180d
+e depois de 1y a 10y, para cluster de vida longa), `log`, `auto` (anéis nos quantis da idade dos
+recursos dos snapshots renderizados, arredondados: `270d,1y,1.5y,2y,2.5y,3y` na origem do kuberito)
+e anéis custom com os sufixos de unidade `m`, `h`, `d` e `y`, `--rings 30m,2h,1d,7d,30d` ou
+`--rings 30d,90d,180d,1y,2y,3y,5y` (número sem sufixo é dia).
 
 O `compare` pareia recursos por `group/Kind/namespace/name` (os nomes dos estados ficam em inglês
 na saída):

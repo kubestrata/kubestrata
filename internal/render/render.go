@@ -33,8 +33,9 @@ const (
 )
 
 // Scales the view offers: 12 linear rings of 30 minutes, 1 hour, 5, 10 or 30 days (plus a
-// compressed outer band), the log scale and custom rings.
-var Scales = []string{"30m", "1h", "5d", "10d", "30d", "log", "custom"}
+// compressed outer band), years (30d to 10y, for long-lived clusters), the log scale, auto (rings
+// at quantiles of the resource ages, see AutoRings) and custom rings.
+var Scales = []string{"30m", "1h", "5d", "10d", "30d", "years", "log", "auto", "custom"}
 
 // maxRingMinutes caps a custom ring at 100 years.
 const maxRingMinutes = 100 * 365 * 24 * 60
@@ -57,13 +58,16 @@ type viewConfig struct {
 	Scale         string   `json:"scale"`
 	Axis          string   `json:"axis"`
 	RingMinutes   []int    `json:"ring_minutes,omitempty"`
-	Version       string   `json:"version"`
+	// AutoRingMinutes are the rings of the auto scale per axis (created, changed), in minutes.
+	AutoRingMinutes map[string][]int `json:"auto_ring_minutes,omitempty"`
+	Version         string           `json:"version"`
 }
 
 var idRE = regexp.MustCompile(`^[0-9a-f]{12}$`)
 
-// ParseRings reads the --rings values: a number with the suffix m (minutes), h (hours) or d
-// (days); a bare number is days, so "5,15,30" keeps its meaning. It returns minutes.
+// ParseRings reads the --rings values: a number with the suffix m (minutes), h (hours), d (days)
+// or y (years of 365 days); a bare number is days, so "5,15,30" keeps its meaning. It returns
+// minutes.
 func ParseRings(values []string) ([]int, error) {
 	out := make([]int, 0, len(values))
 	for _, raw := range values {
@@ -76,10 +80,12 @@ func ParseRings(values []string) ([]int, error) {
 			unit, v = 60, strings.TrimSuffix(v, "h")
 		case strings.HasSuffix(v, "d"):
 			v = strings.TrimSuffix(v, "d")
+		case strings.HasSuffix(v, "y"):
+			unit, v = 365*24*60, strings.TrimSuffix(v, "y")
 		}
 		n, err := strconv.Atoi(v)
 		if err != nil || n <= 0 || n > maxRingMinutes/unit {
-			return nil, fmt.Errorf("--rings: %q is not a positive whole number of minutes (m), hours (h) or days (d, the default) up to 100 years", raw)
+			return nil, fmt.Errorf("--rings: %q is not a positive whole number of minutes (m), hours (h), days (d, the default) or years (y) up to 100 years", raw)
 		}
 		out = append(out, n*unit)
 	}
@@ -149,7 +155,12 @@ func Write(dir string, snaps []*snapshot.Snapshot, o Options) (string, error) {
 		}
 	}
 	cfg := viewConfig{SchemaVersion: ViewSchemaVersion, Mode: o.Mode, Scale: o.Scale, Axis: o.Axis,
-		RingMinutes: o.RingMinutes, Version: o.Version}
+		RingMinutes: o.RingMinutes, Version: o.Version, AutoRingMinutes: map[string][]int{}}
+	for _, axis := range []string{"created", "changed"} {
+		if r := AutoRings(snaps, axis); len(r) > 0 {
+			cfg.AutoRingMinutes[axis] = r
+		}
+	}
 	var scripts strings.Builder
 	seen := map[string]bool{}
 	for _, s := range snaps {

@@ -52,11 +52,24 @@ ConfigMap / ServiceAccount) are drawn on hover or selection only.
 
 Ring scales switch in the browser without regenerating: `30m`, `1h`, `5d`, `10d`, `30d` (12
 linear rings, 30 min → 6 h, 1 h → 12 h, 5 d → 60 d and so on, plus a compressed outer band up to 3
-years), `log` (7d / 30d / 90d / 1y+, saturating at 3 years) and custom rings
-(`--rings 30m,2h,1d,7d,30d`; the suffixes are `m`, `h` and `d`, and a bare number is days, so
-`--rings 5,15,30,90,180,365` keeps its meaning). The hour scales are for young clusters: a cluster
-created yesterday puts everything inside the first 5-day ring. Ring labels and ages below one day
-read in minutes and hours (`30m`, `1h30m`, "42 minutes", "3 hours").
+years), `years` (30d, 90d, 180d, 1y, 2y, 3y, 4y, 5y, 7y, 10y), `log` (7d / 30d / 90d / 1y+,
+saturating at 3 years), `auto` and custom rings (`--rings 30m,2h,1d,7d,30d`; the suffixes are `m`,
+`h`, `d` and `y` (365 days), and a bare number is days, so `--rings 5,15,30,90,180,365` keeps its
+meaning). The hour scales are for young clusters: a cluster created yesterday puts everything
+inside the first 5-day ring. `years` and day and year rings (`--rings 30d,90d,180d,1y,2y,3y,5y`)
+are for long-lived clusters, where most resources are older than a year and would pile up in the
+outer band of the linear scales. Ring labels and ages below one day read in minutes and hours
+(`30m`, `1h30m`, "42 minutes", "3 hours"); whole and half years read `1y`, `1.5y`.
+
+`auto` puts one ring at each eighth of the age distribution of the rendered snapshots (both, in a
+comparison; system namespaces left out unless nothing else is left), the last one at the oldest
+resource, each rounded on a log scale to a readable value (5m … 12h, 1d … 270d, 1y, 1.5y, 2y,
+2.5y, 3y … 100y); rings that round to the same value merge, and a resource past the rounded last
+ring sits in the compressed band. `render` computes the rings for both axes into the page config
+(`auto_ring_minutes`), so switching the axis keeps them right. On the kuberito lab, `auto` reads
+`270d,1y,1.5y,2y,2.5y,3y` for the source alone and spreads the old source evenly, but in the
+comparison it squeezes the target's migration waves (20, 65 and 140 days) into the first rings,
+which `30d` keeps apart, so `30d` stays the default.
 
 ## Collection
 
@@ -350,7 +363,7 @@ Fang v2 over Cobra for commands; Bubble Tea v2, Bubbles v2, Lip Gloss v2 and Huh
 | `kubestrata` | TUI: contexts, cache age, status; `r` refresh, `g` generate, `c` compare, `o` open |
 | `kubestrata contexts` | kubeconfig contexts (no cluster access) |
 | `kubestrata collect [-c ctx]... [--all] [--max-age 6h] [--force] [--snapshot-out file\|dir]` | writes the cache; reuses a snapshot newer than `--max-age`; `--format json` prints a summary per context, `--snapshot-out` also writes the snapshot as plain JSON (`0600`): to a file for one context, as `<cluster_id>.json` into an existing directory for several |
-| `kubestrata render [-c ctx] [--scale 30m\|1h\|5d\|10d\|30d\|log] [--rings 30m,2h,1d] [--axis created\|changed] [-o dir] [--open]` | site from the cache |
+| `kubestrata render [-c ctx] [--scale 30m\|1h\|5d\|10d\|30d\|years\|log\|auto] [--rings 30m,2h,1d,1y] [--axis created\|changed] [-o dir] [--open]` | site from the cache |
 | `kubestrata compare -c source -c target [--scale ...] [--rings ...] [--axis ...] [-o dir] [--open]` | coverage table on stdout and side-by-side site from the cache |
 | `kubestrata diff -c ctx [--from stamp] [--to stamp]` | two snapshots of one cluster: new / gone / drift / equal (CLI and JSON) |
 | `kubestrata cache ls\|prune [--keep 5]` | snapshot housekeeping; `ls` shows the `STAMP` that `diff` takes |
@@ -363,9 +376,9 @@ so a view can be bookmarked and checked headless; `ns=` works in the single-clus
 Content-Security-Policy (`default-src 'none'`) keeps the page off the network. After the first draw
 the page writes `data-status`, `data-rings` (ring labels of the first pane), `data-shown`
 (resources drawn, summed over the panes), `data-draw-ms` and `data-total-ms` on `<body>` for
-automated checks. `make page-check` writes both sites (and a render with custom rings) from the
-cache, loads them in headless Chrome for several hash states, including the `30m` and `1h`
-scales, and fails unless every page reports `data-status="ok"` and, where it checks them, the
+automated checks. `make page-check` writes both sites (and renders with custom rings, rings in
+years and the auto scale) from the cache, loads them in headless Chrome for several hash states,
+including the `30m`, `1h`, `years` and `auto` scales, and fails unless every page reports `data-status="ok"` and, where it checks them, the
 expected ring labels. Measured in headless Chrome on an M4: 20 000 resources draw in
 about 10–16 ms (first paint about 50 ms, 4.8 MB data file).
 

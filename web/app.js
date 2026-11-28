@@ -110,10 +110,11 @@
     if (d < 730) return Math.round(d / 30.4) + " months";
     return (d / 365).toFixed(1) + " years";
   }
-  // ring label of an age in days: 30m, 1h30m, 6h, 36h, 5d, 1y
+  // ring label of an age in days: 30m, 1h30m, 6h, 36h, 5d, 1y, 1.5y
   function ringLabel(d) {
-    var min = Math.round(d * 1440);
+    var min = Math.round(d * 1440), year = 525600;
     if (min < 60) return min + "m";
+    if (min >= year && (min * 2) % year === 0) return (min / year) + "y";
     if (min % 1440) return Math.floor(min / 60) + "h" + (min % 60 ? (min % 60) + "m" : "");
     var days = min / 1440;
     return days >= 365 && days % 365 === 0 ? (days / 365) + "y" : days + "d";
@@ -123,7 +124,9 @@
   function counts(o) { return Object.keys(o).sort().map(function (k) { return k + ": " + o[k]; }).join(", "); }
 
   // ---- ring scales: rr(age) in [RR_MIN, 1]; the band past the last ring is compressed (log)
-  var SCALES = ["30m", "1h", "5d", "10d", "30d", "log"];
+  var SCALES = ["30m", "1h", "5d", "10d", "30d", "years", "log", "auto"];
+  // years: for long-lived clusters, where most resources are older than a year
+  var YEARS = [30, 90, 180, 365, 730, 1095, 1460, 1825, 2555, 3650];
   // ring step of a linear scale ("30m", "1h", "5d") in days; 0 when the name is not one
   function stepOf(name) {
     var p = /^(\d+)([mhd])$/.exec(name || "");
@@ -140,8 +143,14 @@
         }
       };
     }
+    var auto = CFG.auto_ring_minutes && CFG.auto_ring_minutes[st.axis];
     if (name === "custom" && CFG.ring_minutes && CFG.ring_minutes.length) {
       rings = CFG.ring_minutes.map(function (m) { return m / 1440; });
+    } else if (name === "years") {
+      rings = YEARS.slice();
+    } else if (name === "auto" && auto && auto.length) {
+      // computed by kubestrata at quantiles of the resource ages of this view, per axis
+      rings = auto.map(function (m) { return m / 1440; });
     } else {
       var step = stepOf(name) || 30;
       rings = [];

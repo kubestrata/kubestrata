@@ -2,6 +2,7 @@ package render
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -169,7 +170,7 @@ func TestOptions(t *testing.T) {
 	if err := o.Validate(); err != nil || o.Scale != "custom" {
 		t.Errorf("rings: scale=%s err=%v", o.Scale, err)
 	}
-	for _, s := range []string{"30m", "1h", "5d", "10d", "30d", "log"} {
+	for _, s := range []string{"30m", "1h", "5d", "10d", "30d", "years", "log", "auto"} {
 		o := Options{Scale: s}
 		if err := o.Validate(); err != nil {
 			t.Errorf("scale %s: %v", s, err)
@@ -192,7 +193,21 @@ func TestParseRings(t *testing.T) {
 	if got, _ := ParseRings([]string{"5", "15", "30"}); len(got) != 3 || got[2] != 30*1440 {
 		t.Errorf("bare days: %v", got)
 	}
-	for _, bad := range [][]string{{"0"}, {"-5"}, {"1.5h"}, {"2w"}, {"h"}, {""}, {"99999999999999d"}} {
+	// y is 365 days, for long-lived clusters
+	year := 365 * 1440
+	got, err = ParseRings([]string{"30d", "90d", "180d", "1y", "2y", "3y", "5y"})
+	want = []int{30 * 1440, 90 * 1440, 180 * 1440, year, 2 * year, 3 * year, 5 * year}
+	if err != nil || len(got) != len(want) || got[3] != want[3] || got[6] != want[6] {
+		t.Errorf("years: %v, %v", got, err)
+	}
+	if o := (Options{RingMinutes: got}); o.Validate() != nil {
+		t.Error("ascending day and year rings rejected")
+	}
+	if got, err := ParseRings([]string{"100y"}); err != nil || got[0] != 100*year {
+		t.Errorf("100y: %v, %v", got, err)
+	}
+	for _, bad := range [][]string{{"0"}, {"-5"}, {"1.5h"}, {"2w"}, {"h"}, {""}, {"99999999999999d"}, {"101y"}, {"0y"},
+		{"1.5y"}, {"y"}} {
 		if _, err := ParseRings(bad); err == nil {
 			t.Errorf("accepted %q", bad)
 		}
@@ -211,5 +226,89 @@ func TestRingMinutesInConfig(t *testing.T) {
 	page, _ := os.ReadFile(filepath.Join(d, "index.html"))
 	if !bytes.Contains(page, []byte(`"scale":"custom"`)) || !bytes.Contains(page, []byte(`"ring_minutes":[30,120,1440]`)) {
 		t.Error("index.html misses the custom rings in minutes")
+	}
+}
+
+func aged(ns string, ages ...time.Duration) []snapshot.Resource {
+	t0 := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
+	var out []snapshot.Resource
+	for i, a := range ages {
+		out = append(out, snapshot.Resource{ID: fmt.Sprintf("core/ConfigMap/%s/c%d", ns, i), Kind: "ConfigMap", Cat: "config",
+			NS: ns, Name: fmt.Sprintf("c%d", i), Created: t0.Add(-a), Changed: t0.Add(-a / 2)})
+	}
+	return out
+}
+
+func TestAutoRings(t *testing.T) {
+	day := 24 * time.Hour
+	s := fixture()
+	s.Namespaces = append(s.Namespaces, snapshot.Namespace{Name: "kube-system", System: true})
+	// a long-lived cluster: most resources older than a year, the oldest 1500 days; the system
+	// namespace (40 years old) is left out
+	var ages []time.Duration
+	for _, d := range []int{2, 9, 40, 100, 200, 380, 400, 420, 500, 600, 700, 800, 900, 1000, 1200, 1500} {
+		ages = append(ages, time.Duration(d)*day)
+	}
+	s.Resources = append(aged("payments", ages...), aged("kube-system", 40*365*day)...)
+	got := AutoRings([]*snapshot.Snapshot{s}, "created")
+	const year = 365 * 1440
+	if len(got) < 5 || got[len(got)-1] != 4*year {
+		t.Fatalf("rings %v: want the last one at 4y, the nice value nearest to 1500 days", got)
+	}
+	for i, r := range got {
+		if i > 0 && r <= got[i-1] {
+			t.Fatalf("rings not ascending: %v", got)
+		}
+		nice := false
+		for _, n := range niceMinutes {
+			nice = nice || n == r
+		}
+		if !nice {
+			t.Errorf("ring %d minutes is not a rounded value", r)
+		}
+	}
+	if got[0] > 30*1440 {
+		t.Errorf("first ring %d minutes: the youngest eighth is days old", got[0])
+	}
+	// the changed axis halves every age here
+	changed := AutoRings([]*snapshot.Snapshot{s}, "changed")
+	if changed[len(changed)-1] != 2*year {
+		t.Errorf("changed rings %v: want the last one at 2y (750 days)", changed)
+	}
+	// only system resources: they are used rather than nothing
+	sys := fixture()
+	sys.Namespaces = []snapshot.Namespace{{Name: "kube-system", System: true}}
+	sys.Resources = aged("kube-system", 10*time.Minute, 20*time.Minute)
+	if got := AutoRings([]*snapshot.Snapshot{sys}, "created"); len(got) == 0 || got[len(got)-1] != 15 {
+		t.Errorf("system-only rings: %v", got)
+	}
+	empty := fixture()
+	empty.Resources = nil
+	if got := AutoRings([]*snapshot.Snapshot{empty}, "created"); got != nil {
+		t.Errorf("no resources: %v", got)
+	}
+	// both snapshots of a comparison count, each from its own collected_at
+	other := fixture()
+	other.Cluster.ID = "ba9876543210"
+	other.CollectedAt = other.CollectedAt.Add(2000 * day)
+	other.Resources = aged("payments", 0)
+	for i := range other.Resources {
+		other.Resources[i].Created = other.CollectedAt.Add(-2 * day)
+	}
+	if got := AutoRings([]*snapshot.Snapshot{s, other}, "created"); got[len(got)-1] != 4*year {
+		t.Errorf("two snapshots: %v", got)
+	}
+}
+
+// The auto rings of both axes reach the page config.
+func TestAutoRingsInConfig(t *testing.T) {
+	d := t.TempDir()
+	if _, err := Write(d, []*snapshot.Snapshot{fixture()}, Options{Scale: "auto"}); err != nil {
+		t.Fatal(err)
+	}
+	page, _ := os.ReadFile(filepath.Join(d, "index.html"))
+	if !bytes.Contains(page, []byte(`"scale":"auto"`)) || !bytes.Contains(page, []byte(`"auto_ring_minutes":{"changed":[`)) ||
+		!bytes.Contains(page, []byte(`],"created":[`)) {
+		t.Errorf("index.html misses the auto rings: %s", page[bytes.Index(page, []byte("KUBESTRATA_VIEW")):][:300])
 	}
 }

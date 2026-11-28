@@ -53,11 +53,25 @@ Workload → PVC / Secret / ConfigMap / ServiceAccount) aparecem só no hover ou
 
 As escalas de anéis trocam no navegador sem regenerar: `30m`, `1h`, `5d`, `10d`, `30d` (12 anéis
 lineares, 30 min → 6 h, 1 h → 12 h, 5 d → 60 d e assim por diante, mais uma faixa externa
-comprimida até 3 anos), `log` (7d / 30d / 90d / 1a+, saturando em 3 anos) e anéis custom
-(`--rings 30m,2h,1d,7d,30d`; os sufixos são `m`, `h` e `d`, e número sem sufixo é dia, então
-`--rings 5,15,30,90,180,365` mantém o significado). As escalas de horas servem para cluster novo:
-um cluster criado ontem põe tudo dentro do primeiro anel de 5 dias. Rótulos de anel e idades abaixo
-de um dia aparecem em minutos e horas (`30m`, `1h30m`, "42 minutes", "3 hours").
+comprimida até 3 anos), `years` (30d, 90d, 180d, 1y, 2y, 3y, 4y, 5y, 7y, 10y), `log` (7d / 30d /
+90d / 1a+, saturando em 3 anos), `auto` e anéis custom (`--rings 30m,2h,1d,7d,30d`; os sufixos são
+`m`, `h`, `d` e `y` (365 dias), e número sem sufixo é dia, então `--rings 5,15,30,90,180,365`
+mantém o significado). As escalas de horas servem para cluster novo: um cluster criado ontem põe
+tudo dentro do primeiro anel de 5 dias. `years` e anéis em dias e anos
+(`--rings 30d,90d,180d,1y,2y,3y,5y`) servem para cluster de vida longa, em que a maior parte dos
+recursos tem mais de um ano e se amontoaria na faixa externa das escalas lineares. Rótulos de anel
+e idades abaixo de um dia aparecem em minutos e horas (`30m`, `1h30m`, "42 minutes", "3 hours");
+anos inteiros e meios anos aparecem como `1y`, `1.5y`.
+
+O `auto` põe um anel em cada oitavo da distribuição de idade dos snapshots renderizados (os dois,
+numa comparação; namespaces de sistema ficam de fora, a não ser que não sobre mais nada), o último
+no recurso mais antigo, cada um arredondado em escala log para um valor legível (5m … 12h, 1d …
+270d, 1y, 1.5y, 2y, 2.5y, 3y … 100y); anéis que arredondam para o mesmo valor se fundem, e um
+recurso além do último anel arredondado fica na faixa comprimida. O `render` calcula os anéis dos
+dois eixos na config da página (`auto_ring_minutes`), então trocar o eixo mantém os anéis certos.
+No lab kuberito, o `auto` dá `270d,1y,1.5y,2y,2.5y,3y` para a origem sozinha e espalha a origem
+antiga por igual, mas na comparação espreme as ondas de migração do destino (20, 65 e 140 dias)
+nos primeiros anéis, que o `30d` mantém separadas, então o `30d` continua o padrão.
 
 ## Coleta
 
@@ -358,7 +372,7 @@ Fang v2 sobre Cobra nos comandos; Bubble Tea v2, Bubbles v2, Lip Gloss v2 e Huh 
 | `kubestrata` | TUI: contextos, idade do cache, status; `r` refresh, `g` gerar, `c` comparar, `o` abrir |
 | `kubestrata contexts` | contextos do kubeconfig (sem acessar cluster) |
 | `kubestrata collect [-c ctx]... [--all] [--max-age 6h] [--force] [--snapshot-out arquivo\|dir]` | grava no cache; reaproveita snapshot mais novo que `--max-age`; `--format json` imprime um resumo por contexto, `--snapshot-out` também grava o snapshot em JSON puro (`0600`): num arquivo para um contexto, como `<cluster_id>.json` num diretório existente para vários |
-| `kubestrata render [-c ctx] [--scale 30m\|1h\|5d\|10d\|30d\|log] [--rings 30m,2h,1d] [--axis created\|changed] [-o dir] [--open]` | site a partir do cache |
+| `kubestrata render [-c ctx] [--scale 30m\|1h\|5d\|10d\|30d\|years\|log\|auto] [--rings 30m,2h,1d,1y] [--axis created\|changed] [-o dir] [--open]` | site a partir do cache |
 | `kubestrata compare -c source -c target [--scale ...] [--rings ...] [--axis ...] [-o dir] [--open]` | tabela de cobertura no stdout e site lado a lado a partir do cache |
 | `kubestrata diff -c ctx [--from stamp] [--to stamp]` | dois snapshots de um cluster: new / gone / drift / equal (CLI e JSON) |
 | `kubestrata cache ls\|prune [--keep 5]` | manutenção dos snapshots; o `ls` mostra o `STAMP` que o `diff` recebe |
@@ -372,9 +386,9 @@ favorito e ser conferida em modo headless; o `ns=` também funciona na visão de
 Content-Security-Policy (`default-src 'none'`) mantém a página fora da rede. Depois do primeiro
 desenho a página grava `data-status`, `data-rings` (rótulos dos anéis do primeiro painel),
 `data-shown` (recursos desenhados, somados nos painéis), `data-draw-ms` e `data-total-ms` no
-`<body>` para checagem automatizada. O `make page-check` grava os dois sites (e um render com anéis
-custom) a partir do cache, carrega as páginas no Chrome headless em vários estados de hash,
-inclusive as escalas `30m` e `1h`, e falha se alguma página não informar `data-status="ok"` e,
+`<body>` para checagem automatizada. O `make page-check` grava os dois sites (e renders com anéis
+custom, anéis em anos e a escala auto) a partir do cache, carrega as páginas no Chrome headless em
+vários estados de hash, inclusive as escalas `30m`, `1h`, `years` e `auto`, e falha se alguma página não informar `data-status="ok"` e,
 onde confere, os rótulos de anel esperados. Medido no Chrome headless num M4: 20 000
 recursos desenham em cerca de 10–16 ms (primeiro desenho em cerca de 50 ms, arquivo de dados de
 4,8 MB).

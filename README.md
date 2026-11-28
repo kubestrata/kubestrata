@@ -135,8 +135,11 @@ account ids, EKS/AKS endpoint hosts, OpenShift cluster domains (`api.redacted:64
 `openshift.io/requester` (user names) in the output and the site; the cache keeps the real values.
 
 Ring scales (`render`/`compare --scale`, also switchable in the page): `30m` and `1h` (12 rings of
-30 minutes or 1 hour, for young clusters), `5d`, `10d`, `30d`, `log`, and custom rings with unit
-suffixes, `--rings 30m,2h,1d,7d,30d` (a bare number is days).
+30 minutes or 1 hour, for young clusters), `5d`, `10d`, `30d` (the default), `years` (30d, 90d,
+180d, then 1y to 10y, for long-lived clusters), `log`, `auto` (rings at quantiles of the resource
+ages of the rendered snapshots, rounded: `270d,1y,1.5y,2y,2.5y,3y` on the kuberito source), and
+custom rings with unit suffixes `m`, `h`, `d` and `y`, `--rings 30m,2h,1d,7d,30d` or
+`--rings 30d,90d,180d,1y,2y,3y,5y` (a bare number is days).
 
 `compare` pairs resources by `group/Kind/namespace/name`:
 

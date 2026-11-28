@@ -13,6 +13,12 @@ All notable changes to this project are documented here. Versions follow
   mask for the same user across the snapshots and the comparison of one run). API groups and CRD
   names such as `apps.openshift.io` keep their names. Snapshots record where each namespace team
   came from (`namespaces[].team_from`); collect again so `--redact` can find requester teams.
+- Ring scales for long-lived clusters: `--rings` takes the suffix `y` (365 days), e.g.
+  `--rings 30d,90d,180d,1y,2y,3y,5y`; the preset `years` (30d, 90d, 180d, 1y … 10y) in
+  `render`/`compare --scale` and in the page; and `auto`, with rings at quantiles of the resource
+  ages of the rendered snapshots, rounded to readable values (`270d,1y,1.5y,2y,2.5y,3y`), computed
+  for both axes. The default stays `30d`: on the kuberito lab, `auto` squeezes the migration waves of
+  the target into the first rings of the comparison. Ring labels show half years as `1.5y`.
 
 ## 0.1.4 — 2026-11-27
 
