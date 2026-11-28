@@ -7,8 +7,8 @@ All notable changes to this project are documented here. Versions follow
 
 - `--redact` masks OpenShift values: the `<cluster>.<base domain>` part of API hosts
   (`api.redacted:6443`, `api-int.redacted`) and of every host under `apps.<cluster>.<base>` (Route,
-  Ingress and HTTPRoute hosts, error messages), the dashed API host in `oc login` context, cluster
-  and user names (`ns-a/api-redacted:6443/user-a`), and team names taken from the
+  Ingress and HTTPRoute hosts, error messages), the dashed API host and the user in `oc login`
+  context, cluster and user names (`ns-a/api-redacted:6443/redacted`), and team names taken from the
   `openshift.io/requester` annotation, which are user names (`redacted-1`, `redacted-2`, the same
   mask for the same user across the snapshots and the comparison of one run). API groups and CRD
   names such as `apps.openshift.io` keep their names. Snapshots record where each namespace team
@@ -17,8 +17,9 @@ All notable changes to this project are documented here. Versions follow
   `--rings 30d,90d,180d,1y,2y,3y,5y`; the preset `years` (30d, 90d, 180d, 1y … 10y) in
   `render`/`compare --scale` and in the page; and `auto`, with rings at quantiles of the resource
   ages of the rendered snapshots, rounded to readable values (`270d,1y,1.5y,2y,2.5y,3y`), computed
-  for both axes. The default stays `30d`: on the kuberito lab, `auto` squeezes the migration waves of
-  the target into the first rings of the comparison. Ring labels show half years as `1.5y`.
+  for both axes. `auto` is the new default of `render`; `compare` keeps `30d`, because on the
+  kuberito lab `auto` squeezes the migration waves of the target into the first rings of the
+  comparison. Ring labels show half years as `1.5y`.
 - Argo CD attribution from `status.resources` of the Applications that deploy to the collected
   cluster, whatever tracking method the instance uses (the label and annotation checks stay). An
   Application with another destination is counted as remote and not used. Snapshots carry
@@ -42,7 +43,8 @@ All notable changes to this project are documented here. Versions follow
   `data-match` for automated checks.
 - `compare` pairs OpenShift kinds with what the target serves instead: a Route with an HTTPRoute or
   an Ingress of the same namespace (a host of the target is the Route host, the same name first;
-  else the same name) and a DeploymentConfig with the Deployment of the same name. The pair is one
+  else the same name), an Ingress with an HTTPRoute (Ingress to Gateway API, on shared hosts, then
+  the same name) and a DeploymentConfig with the Deployment of the same name. The pair is one
   item with `target_id` and `translation` (`"Route→HTTPRoute"`), equal or drift on the facts both
   kinds express (host, path, TLS on/off, backend Service and port; images, replicas and the rest of
   the pod template), and counts as covered. The page highlights both sides and names the
@@ -62,7 +64,9 @@ All notable changes to this project are documented here. Versions follow
   Custom resources of OpenShift's cluster operators (MachineConfig, MachineConfigPool,
   APIRequestCount, `config.openshift.io`, `operator.openshift.io`, the Machine API and more) get
   `platform: true` (their `cat` stays `crd`) and form the page's `platform` category, hidden by
-  default (`show=platform` in the hash).
+  default (`show=platform` in the hash). `compare` lists them with their state but leaves them out
+  of the counts and the coverage, like system namespaces: a pending MachineConfig no longer lowers
+  the coverage of an OpenShift → EKS comparison.
 - Team inference: `collect --team-from-ns '<regexp>'` names a namespace's team from its name (first
   group), before the `openshift.io/requester` fallback, which now skips `kube:admin`, `system:*`,
   `admin` and the users of `--requester-ignore` (a trailing `*` matches a prefix). `collect` prints
@@ -74,8 +78,8 @@ All notable changes to this project are documented here. Versions follow
   hides them again).
 - Releases carry a CycloneDX SBOM per archive (`kubestrata_<version>_<os>_<arch>.cdx.json`,
   `cyclonedx-gomod` v1.12.0) and GitHub artifact attestations: SLSA build provenance for every
-  archive and an SBOM attestation for each (`actions/attest-build-provenance`,
-  `actions/attest-sbom`, pinned by commit). `gh attestation verify <archive> -R
+  archive and an SBOM attestation for each (`actions/attest` v4.2.2, pinned by commit; the
+  `attest-build-provenance` and `attest-sbom` wrappers are not used, the latter is deprecated). `gh attestation verify <archive> -R
   kubestrata/kubestrata` verifies an archive without cosign; README and the security analysis show
   how, and how to check the PEP 740 attestation of a PyPI wheel.
 - `kubestrata summary -c <ctx>`: the migration summary of the newest cached snapshot, as Markdown or

@@ -213,6 +213,13 @@ func compareSnapshots(src, tgt *snapshot.Snapshot, translate bool) *Result {
 		default:
 			it.State = New
 		}
+		res.Items = append(res.Items, it)
+		// Platform kinds (OpenShift cluster operators, OLM, ...) are listed with their state but
+		// left out of the counts and the coverage, like system namespaces are left out of the
+		// totals: a migration does not move them.
+		if (inA && ra.Platform) || (inB && rb.Platform) {
+			continue
+		}
 		ns := r.NS
 		if ns == "" {
 			ns = snapshot.ClusterScoped
@@ -222,7 +229,6 @@ func compareSnapshots(src, tgt *snapshot.Snapshot, translate bool) *Result {
 			s.Team = r.Team
 		}
 		count(s, it.State, inA, inB)
-		res.Items = append(res.Items, it)
 	}
 
 	keys := make([]string, 0, len(per))

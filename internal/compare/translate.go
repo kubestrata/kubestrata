@@ -9,7 +9,7 @@ import (
 )
 
 // Kind translations: an OpenShift Route served in the target by an Ingress or a Gateway API
-// HTTPRoute, a DeploymentConfig by a Deployment. The identity key holds the kind, so these pairs
+// HTTPRoute, an Ingress by an HTTPRoute, a DeploymentConfig by a Deployment. The identity key holds the kind, so these pairs
 // never meet by id; Compare pairs what is left pending in the source with what is new in the
 // target, in the same namespace.
 const (
@@ -35,17 +35,44 @@ func groupKind(id string) string {
 	return parts[0] + "/" + parts[1]
 }
 
+// translatesTo lists, per source group/Kind, the target group/Kinds that can serve it: a Route by
+// an Ingress or an HTTPRoute, an Ingress by an HTTPRoute (Ingress to Gateway API), a
+// DeploymentConfig by a Deployment.
+var translatesTo = map[string]map[string]bool{
+	gkRoute:   {gkIngress: true, gkHTTPRoute: true},
+	gkIngress: {gkHTTPRoute: true},
+	gkDC:      {gkDeploy: true},
+}
+
+// hostsOf reads the hosts a Route (host) or an Ingress or HTTPRoute (hosts) serves.
+func hostsOf(r snapshot.Resource) []string {
+	if groupKind(r.ID) == gkRoute {
+		return strs([]any{str(r.Facts["host"])})
+	}
+	return strs(r.Facts["hosts"])
+}
+
+func overlaps(a, b []string) bool {
+	for _, v := range a {
+		if contains(b, v) {
+			return true
+		}
+	}
+	return false
+}
+
 // pairTranslations returns source id → target id. A Route pairs with an unpaired Ingress or
-// HTTPRoute of its namespace whose hosts hold the Route host, the same name first; without a host
-// match, with one of the same name. A DeploymentConfig pairs with the Deployment of the same
-// namespace and name. Sources go in id order, candidates too, and each target pairs once.
+// HTTPRoute of its namespace, an Ingress with an unpaired HTTPRoute: one that serves one of its
+// hosts, the same name first; without a host match, one of the same name. A DeploymentConfig pairs
+// with the Deployment of the same namespace and name. Sources go in id order, candidates too, and
+// each target pairs once.
 func pairTranslations(a, b map[string]snapshot.Resource) map[string]string {
 	var sources []string
 	for id := range a {
 		if _, ok := b[id]; ok {
 			continue
 		}
-		if gk := groupKind(id); gk == gkRoute || gk == gkDC {
+		if _, ok := translatesTo[groupKind(id)]; ok {
 			sources = append(sources, id)
 		}
 	}
@@ -67,19 +94,20 @@ func pairTranslations(a, b map[string]snapshot.Resource) map[string]string {
 	out := map[string]string{}
 	for _, id := range sources {
 		r := a[id]
-		host := str(r.Facts["host"])
+		accepts := translatesTo[groupKind(id)]
+		hosts := hostsOf(r)
 		best, score := "", 0
 		for _, tid := range byNS[r.NS] {
 			t := b[tid]
 			gk := groupKind(tid)
-			if used[tid] || (groupKind(id) == gkDC) != (gk == gkDeploy) {
+			if used[tid] || !accepts[gk] {
 				continue
 			}
 			sc := 0
 			if nameOf(tid) == nameOf(id) {
 				sc = 1
 			}
-			if gk != gkDeploy && host != "" && contains(strs(t.Facts["hosts"]), host) {
+			if gk != gkDeploy && overlaps(hosts, hostsOf(t)) {
 				sc += 2
 			}
 			if gk == gkDeploy && sc == 0 {

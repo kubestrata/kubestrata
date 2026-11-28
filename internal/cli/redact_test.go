@@ -240,7 +240,7 @@ func TestRedactOpenShift(t *testing.T) {
 	}
 	b, _ := os.ReadFile(snapOut)
 	assertNoOCPLeak(t, "--snapshot-out file", b)
-	for _, want := range []string{`"web-ns-a.apps.redacted"`, `"api.redacted:6443"`, `"ns-a/api-redacted:6443/user-a"`,
+	for _, want := range []string{`"web-ns-a.apps.redacted"`, `"api.redacted:6443"`, `"ns-a/api-redacted:6443/redacted"`,
 		`"team": "redacted-1"`, `"team": "team-b"`} {
 		if !bytes.Contains(b, []byte(want)) {
 			t.Errorf("--snapshot-out misses %s", want)

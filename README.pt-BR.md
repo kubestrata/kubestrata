@@ -230,17 +230,19 @@ de conta AWS, hosts de endpoint EKS/AKS, domínios de cluster OpenShift (`api.re
 `openshift.io/requester` (nomes de usuário) na saída e no site; o cache guarda os valores reais.
 
 Escalas de anéis (`render`/`compare --scale`, também trocáveis na página): `30m` e `1h` (12 anéis
-de 30 minutos ou 1 hora, para cluster novo), `5d`, `10d`, `30d` (o padrão), `years` (30d, 90d, 180d
-e depois de 1y a 10y, para cluster de vida longa), `log`, `auto` (anéis nos quantis da idade dos
+de 30 minutos ou 1 hora, para cluster novo), `5d`, `10d`, `30d` (o padrão do `compare`), `years` (30d, 90d, 180d
+e depois de 1y a 10y, para cluster de vida longa), `log`, `auto` (o padrão do `render`: anéis nos quantis da idade dos
 recursos dos snapshots renderizados, arredondados: `270d,1y,1.5y,2y,2.5y,3y` na origem do kuberito)
 e anéis custom com os sufixos de unidade `m`, `h`, `d` e `y`, `--rings 30m,2h,1d,7d,30d` ou
 `--rings 30d,90d,180d,1y,2y,3y,5y` (número sem sufixo é dia).
 
 O `compare` pareia recursos por `group/Kind/namespace/name` e depois pareia o que o destino serve
-com outro kind: uma Route do OpenShift com uma HTTPRoute ou um Ingress (por host, depois por nome)
-e uma DeploymentConfig com um Deployment (por nome), no mesmo namespace, comparados nos fatos que
-os dois kinds expressam e mostrados com a tradução (`Route→HTTPRoute`) no JSON e na página (os
-nomes dos estados ficam em inglês na saída):
+com outro kind: uma Route do OpenShift com uma HTTPRoute ou um Ingress (por host, depois por nome),
+um Ingress com uma HTTPRoute (Ingress para Gateway API) e uma DeploymentConfig com um Deployment
+(por nome), no mesmo namespace, comparados nos fatos que os dois kinds expressam e mostrados com a
+tradução (`Route→HTTPRoute`) no JSON e na página. Os kinds de plataforma (operators de cluster do
+OpenShift) aparecem na lista, mas ficam fora das contagens e da cobertura (os nomes dos estados
+ficam em inglês na saída):
 
 | Estado | Significado |
 |---|---|

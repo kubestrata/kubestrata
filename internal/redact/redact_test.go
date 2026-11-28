@@ -80,11 +80,13 @@ func TestName(t *testing.T) {
 		"kuberito-source":                                         "kuberito-source",
 		"build-1234567890123":                                     "build-1234567890123",
 		// oc login: cluster, user and context names carry the API host with dashes
-		"api-ocp1-example-com:6443":                                 "api-redacted:6443",
-		"user-a/api-ocp1-example-com:6443":                          "user-a/api-redacted:6443",
-		"default/api-ocp1-example-com:6443/user-a":                  "default/api-redacted:6443/user-a",
-		"ns-a/api-ocp1-dev-example-co-uk:443/kube:admin":            "ns-a/api-redacted:443/kube:admin",
-		`context "ns-a/api-ocp1-example-com:6443/user-a" not found`: `context "ns-a/api-redacted:6443/user-a" not found`,
+		"api-ocp1-example-com:6443": "api-redacted:6443",
+		// ... and the user, which is personal data
+		"user-a/api-ocp1-example-com:6443":                          "redacted/api-redacted:6443",
+		"default/api-ocp1-example-com:6443/user-a":                  "default/api-redacted:6443/redacted",
+		"ns-a/api-ocp1-dev-example-co-uk:443/kube:admin":            "ns-a/api-redacted:443/redacted",
+		`context "ns-a/api-ocp1-example-com:6443/user-a" not found`: `context "ns-a/api-redacted:6443/redacted" not found`,
+		`user "user-b/api-ocp1-example-com:6443" has no token`:      `user "redacted/api-redacted:6443" has no token`,
 		"api.ocp1.example.com:6443":                                 "api.redacted:6443",
 		// not an oc login host
 		"api-gateway":              "api-gateway",

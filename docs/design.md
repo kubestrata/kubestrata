@@ -70,7 +70,7 @@ ring sits in the compressed band. `render` computes the rings for both axes into
 (`auto_ring_minutes`), so switching the axis keeps them right. On the kuberito lab, `auto` reads
 `270d,1y,1.5y,2y,2.5y,3y` for the source alone and spreads the old source evenly, but in the
 comparison it squeezes the target's migration waves (20, 65 and 140 days) into the first rings,
-which `30d` keeps apart, so `30d` stays the default.
+which `30d` keeps apart. So `render` (one cluster) defaults to `auto` and `compare` to `30d`.
 
 ## Collection
 
@@ -148,7 +148,7 @@ writes for sharing, and leaves the cache as it is:
 | any run of exactly 12 digits in a context, cluster or user name | `redacted_AdministratorAccess` |
 | `<cluster>.<base>` of an OpenShift API host, `api.<cluster>.<base>` or `api-int.<cluster>.<base>` | `api.redacted:6443`, `api-int.redacted` |
 | `<cluster>.<base>` of any host under `apps.<cluster>.<base>` (Route, Ingress and HTTPRoute hosts, messages) | `web-ns-a.apps.redacted` |
-| the dashed API host that `oc login` writes into cluster, user and context names | `ns-a/api-redacted:6443/user-a` |
+| the dashed API host and the user that `oc login` writes into cluster, user and context names | `ns-a/api-redacted:6443/redacted`, `redacted/api-redacted:6443` |
 | a team taken from the namespace annotation `openshift.io/requester` (a user name) | `redacted-1`, `redacted-2` |
 
 It applies to `contexts` (text and JSON), `collect` output and `--snapshot-out` files, `cache ls`,
@@ -339,11 +339,14 @@ is left pending and new:
 | Source | Target | Paired by | Facts compared |
 |---|---|---|---|
 | OpenShift Route | Gateway API HTTPRoute or Ingress | a host of the target is the Route host (the same name first), else the same name | `hosts`, `paths` (no path is `/`), `tls` (Route termination; Ingress `tls`; for an HTTPRoute, an HTTPS or TLS listener on a Gateway it attaches to), `backends` (Service names), `ports` (`service:port`) |
+| Ingress | Gateway API HTTPRoute | a host of the HTTPRoute is a host of the Ingress (the same name first), else the same name | the same as a Route |
 | DeploymentConfig | Deployment | the same name | the pod template facts: images, replicas, requests and limits, service account, PVCs, node selector (not `triggers`, `strategy`, `end_of_life`) |
 
 The pair is one item under the source id, with `target_id` and `translation`
 (`"Route→HTTPRoute"`), state `equal` or `drift`, and counts once on each side and as covered in the
-namespace coverage. Only the facts both sides express are compared: a fact one side cannot tell
+namespace coverage. Platform kinds (`platform: true`) keep their state in the item list but stay
+out of every count and coverage, the way system namespaces stay out of the totals: the target
+platform recreates them, nobody migrates them. Only the facts both sides express are compared: a fact one side cannot tell
 (an HTTPRoute whose Gateway is not in the snapshot, an Ingress collected before 0.2 without
 `paths`) is left out. Each target pairs once, sources in id order. `diff` does not translate: in
 one cluster, a Route replaced by an HTTPRoute is gone and new. An Ingress replaced by an

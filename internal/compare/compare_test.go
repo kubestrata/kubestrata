@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -308,6 +309,60 @@ func TestTranslations(t *testing.T) {
 	dc, _ := r.Find("apps.openshift.io/DeploymentConfig/ns-a/portal")
 	if len(dc.Diff) != 1 || !strings.Contains(fmt.Sprint(dc.Diff[0].Target), "reg/portal:2") {
 		t.Errorf("DeploymentConfig diff: %+v", dc.Diff)
+	}
+}
+
+// An Ingress of the source served by an HTTPRoute of the target (Ingress to Gateway API).
+func TestIngressToHTTPRoute(t *testing.T) {
+	src := &snapshot.Snapshot{SchemaVersion: 1, CollectedAt: t0,
+		Cluster:    snapshot.Cluster{ID: "aaaaaaaaaaaa", Context: "source", Distro: "eks"},
+		Namespaces: []snapshot.Namespace{{Name: "ns-a"}},
+		Resources: []snapshot.Resource{
+			res("networking.k8s.io/Ingress/ns-a/api", "ns-a", "Ingress", "sha256:i1", map[string]any{
+				"hosts": []string{"api.example.com"}, "paths": []string{"/"}, "tls": true}),
+			// in both clusters with the same id: compared as usual, never a translation source
+			res("networking.k8s.io/Ingress/ns-a/keep", "ns-a", "Ingress", "sha256:i2", map[string]any{
+				"hosts": []string{"keep.example.com"}}),
+		},
+	}
+	tgt := &snapshot.Snapshot{SchemaVersion: 1, CollectedAt: t0,
+		Cluster:    snapshot.Cluster{ID: "bbbbbbbbbbbb", Context: "target", Distro: "eks"},
+		Namespaces: []snapshot.Namespace{{Name: "ns-a"}},
+		Resources: []snapshot.Resource{
+			res("gateway.networking.k8s.io/HTTPRoute/ns-a/api-route", "ns-a", "HTTPRoute", "sha256:h1", map[string]any{
+				"hosts": []string{"api.example.com"}, "paths": []string{"/"}}),
+			res("networking.k8s.io/Ingress/ns-a/keep", "ns-a", "Ingress", "sha256:i2", map[string]any{
+				"hosts": []string{"keep.example.com"}}),
+		},
+	}
+	r := Compare(src, tgt)
+	it, ok := r.Find("networking.k8s.io/Ingress/ns-a/api")
+	if !ok || it.State != Equal || it.TargetID != "gateway.networking.k8s.io/HTTPRoute/ns-a/api-route" ||
+		it.Translation != "Ingress→HTTPRoute" {
+		t.Errorf("Ingress→HTTPRoute: %+v", it)
+	}
+	if keep, _ := r.Find("networking.k8s.io/Ingress/ns-a/keep"); keep.State != Equal || keep.Translation != "" {
+		t.Errorf("same id in both clusters: %+v", keep)
+	}
+	if tot := r.Totals; tot.Source != 2 || tot.Target != 2 || tot.Equal != 2 || tot.Pending != 0 || tot.New != 0 {
+		t.Errorf("totals: %+v", tot)
+	}
+}
+
+// Platform kinds keep their state in the item list but stay out of the counts and the coverage.
+func TestPlatformLeftOutOfCounts(t *testing.T) {
+	base := Compare(snaps())
+	src, tgt := snaps()
+	mc := res("machineconfiguration.openshift.io/MachineConfig/_/worker-ssh", "", "MachineConfig", "sha256:m1", nil)
+	mc.Platform = true
+	src.Resources = append(src.Resources, mc)
+	r := Compare(src, tgt)
+	it, ok := r.Find(mc.ID)
+	if !ok || it.State != Pending {
+		t.Errorf("platform item: %+v (found %v)", it, ok)
+	}
+	if !reflect.DeepEqual(r.Totals, base.Totals) {
+		t.Errorf("totals with a platform kind: %+v, want %+v", r.Totals, base.Totals)
 	}
 }
 

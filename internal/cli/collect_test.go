@@ -54,7 +54,7 @@ func TestSummaryCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	for _, want := range []string{"# kubestrata summary: ns-a/api-redacted:6443/user-a", "## Managers", "route.openshift.io/Route | 1",
+	for _, want := range []string{"# kubestrata summary: ns-a/api-redacted:6443/redacted", "## Managers", "route.openshift.io/Route | 1",
 		"| ns-a | redacted-1 | 1 |"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("summary misses %q:\n%s", want, out)

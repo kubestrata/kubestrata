@@ -10,8 +10,9 @@
 //	shop-web.apps.ocp1.example.com                      → shop-web.apps.redacted
 //
 // Names (contexts, kubeconfig clusters and users) also lose any standalone run of 12 digits, the
-// shape of an AWS account id outside an ARN, and the dashed API host that `oc login` writes into
-// them (default/api-ocp1-example-com:6443/user-a → default/api-redacted:6443/user-a).
+// shape of an AWS account id outside an ARN, and the dashed API host and the user that `oc login`
+// writes into them (default/api-ocp1-example-com:6443/user-a → default/api-redacted:6443/redacted,
+// user-a/api-ocp1-example-com:6443 → redacted/api-redacted:6443).
 package redact
 
 import (
@@ -45,7 +46,11 @@ var (
 	// oc login names the cluster <api host with dashes>:<port>, the user <user>/<cluster> and the
 	// context <namespace>/<cluster>/<user>. The dashed host has at least two parts after api.
 	ocLoginHost = regexp.MustCompile(`(^|[^A-Za-z0-9.-])api-[A-Za-z0-9]+-[A-Za-z0-9-]+(:[0-9]+)`)
-	digits      = regexp.MustCompile(`[0-9]+`)
+	// After the host is masked, the user of those names (personal data) is masked too: the part
+	// after the cluster in a context, the part before it in a user name.
+	ocLoginCtxUser = regexp.MustCompile(`(/api-` + Mask + `:[0-9]+/)[^\s"'/()]+`)
+	ocLoginUser    = regexp.MustCompile(`(^|[\s"'(])[^\s"'/()]+(/api-` + Mask + `:[0-9]+)($|[\s"')])`)
+	digits         = regexp.MustCompile(`[0-9]+`)
 )
 
 // Text masks account ids in ARNs and ECR registries, the cluster label of managed endpoints and
@@ -59,10 +64,12 @@ func Text(s string) string {
 	return openshiftApps.ReplaceAllString(s, "${1}"+Mask)
 }
 
-// Name is Text plus the dashed API host of oc login names and any run of exactly 12 digits, for
-// context, cluster and user names and for messages that quote them.
+// Name is Text plus the dashed API host and the user of oc login names and any run of exactly 12
+// digits, for context, cluster and user names and for messages that quote them.
 func Name(s string) string {
 	s = ocLoginHost.ReplaceAllString(Text(s), "${1}api-"+Mask+"${2}")
+	s = ocLoginCtxUser.ReplaceAllString(s, "${1}"+Mask)
+	s = ocLoginUser.ReplaceAllString(s, "${1}"+Mask+"${2}${3}")
 	return digits.ReplaceAllStringFunc(s, func(d string) string {
 		if len(d) == 12 {
 			return Mask

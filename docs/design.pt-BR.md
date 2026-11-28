@@ -72,7 +72,8 @@ recurso além do último anel arredondado fica na faixa comprimida. O `render` c
 dois eixos na config da página (`auto_ring_minutes`), então trocar o eixo mantém os anéis certos.
 No lab kuberito, o `auto` dá `270d,1y,1.5y,2y,2.5y,3y` para a origem sozinha e espalha a origem
 antiga por igual, mas na comparação espreme as ondas de migração do destino (20, 65 e 140 dias)
-nos primeiros anéis, que o `30d` mantém separadas, então o `30d` continua o padrão.
+nos primeiros anéis, que o `30d` mantém separadas. Por isso o `render` (um cluster) usa `auto` por
+padrão e o `compare` usa `30d`.
 
 ## Coleta
 
@@ -151,7 +152,7 @@ imprime e grava para compartilhar, e deixa o cache como está:
 | qualquer sequência de exatamente 12 dígitos num nome de contexto, cluster ou usuário | `redacted_AdministratorAccess` |
 | `<cluster>.<base>` de um host de API OpenShift, `api.<cluster>.<base>` ou `api-int.<cluster>.<base>` | `api.redacted:6443`, `api-int.redacted` |
 | `<cluster>.<base>` de qualquer host sob `apps.<cluster>.<base>` (hosts de Route, Ingress e HTTPRoute, mensagens) | `web-ns-a.apps.redacted` |
-| o host da API com hífens que o `oc login` grava nos nomes de cluster, usuário e contexto | `ns-a/api-redacted:6443/user-a` |
+| o host da API com hífens e o usuário que o `oc login` grava nos nomes de cluster, usuário e contexto | `ns-a/api-redacted:6443/redacted`, `redacted/api-redacted:6443` |
 | um time tirado da annotation de namespace `openshift.io/requester` (um nome de usuário) | `redacted-1`, `redacted-2` |
 
 Vale para o `contexts` (texto e JSON), a saída do `collect` e os arquivos do `--snapshot-out`, o
@@ -344,10 +345,14 @@ sobrou pendente e novo:
 | Origem | Destino | Pareado por | Fatos comparados |
 |---|---|---|---|
 | Route do OpenShift | HTTPRoute da Gateway API ou Ingress | um host do destino é o host da Route (o mesmo nome primeiro), senão o mesmo nome | `hosts`, `paths` (sem path é `/`), `tls` (terminação da Route; `tls` do Ingress; numa HTTPRoute, um listener HTTPS ou TLS num Gateway a que ela se liga), `backends` (nomes de Service), `ports` (`service:porta`) |
+| Ingress | HTTPRoute da Gateway API | um host da HTTPRoute é host do Ingress (o mesmo nome primeiro), senão o mesmo nome | os mesmos de uma Route |
 | DeploymentConfig | Deployment | o mesmo nome | os fatos do template de pod: imagens, réplicas, requests e limits, service account, PVCs, node selector (não `triggers`, `strategy`, `end_of_life`) |
 
 O par é um item só sob o id da origem, com `target_id` e `translation` (`"Route→HTTPRoute"`),
 estado `equal` ou `drift`, e conta uma vez de cada lado e como coberto na cobertura do namespace.
+Os kinds de plataforma (`platform: true`) mantêm o estado na lista de itens, mas ficam fora de todas
+as contagens e da cobertura, como os namespaces de sistema ficam fora dos totais: a plataforma de
+destino recria esses objetos, ninguém os migra.
 Só os fatos que os dois lados expressam são comparados: um fato que um lado não sabe dizer (uma
 HTTPRoute cujo Gateway não está no snapshot, um Ingress coletado antes da 0.2 sem `paths`) fica de
 fora. Cada destino pareia uma vez, as origens em ordem de id. O `diff` não traduz: num cluster só,

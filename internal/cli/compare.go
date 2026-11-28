@@ -106,7 +106,7 @@ func newCompareCmd(g *globals) *cobra.Command {
 	cmd.Flags().StringSliceVarP(&contexts, "context", "c", nil, "source context, then target context")
 	cmd.Flags().StringVarP(&out, "output", "o", "", "output directory (default: <cache dir>/compare)")
 	cmd.Flags().BoolVar(&open, "open", false, "open the page in the default browser")
-	addScaleFlags(cmd, &o, &rings)
+	addScaleFlags(cmd, &o, &rings, "30d")
 	return cmd
 }
 
