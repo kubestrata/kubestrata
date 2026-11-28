@@ -185,7 +185,10 @@ ages of the rendered snapshots, rounded: `270d,1y,1.5y,2y,2.5y,3y` on the kuberi
 custom rings with unit suffixes `m`, `h`, `d` and `y`, `--rings 30m,2h,1d,7d,30d` or
 `--rings 30d,90d,180d,1y,2y,3y,5y` (a bare number is days).
 
-`compare` pairs resources by `group/Kind/namespace/name`:
+`compare` pairs resources by `group/Kind/namespace/name`, then pairs what the target serves with
+another kind: an OpenShift Route with an HTTPRoute or an Ingress (by host, then name) and a
+DeploymentConfig with a Deployment (by name), in the same namespace, compared on the facts both
+kinds express and shown with the translation (`Route→HTTPRoute`) in the JSON and the page:
 
 | State | Meaning |
 |---|---|

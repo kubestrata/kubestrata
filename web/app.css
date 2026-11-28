@@ -51,6 +51,7 @@ aside table.two td:first-child { width: 28%; }
 aside table.two td { width: 36%; padding-right: 8px; word-break: normal; overflow-wrap: anywhere; }
 aside tr.hd td { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
 aside td.diff { color: var(--warn); }
+aside .translation { color: var(--accent); margin: 4px 0 6px; }
 .state { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
 .state i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
 #coverage { display: none; grid-column: 1; grid-row: 2; max-height: 32vh; overflow: auto; padding: 6px 14px 8px;

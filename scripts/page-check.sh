@@ -101,6 +101,14 @@ check compare "scale=1h&axis=changed&color=manager" 'data-rings="1h,2h,'
 check compare "scale=years&color=team" 'data-rings="30d,90d,180d,1y,'
 check compare "scale=auto&sel=$id" 'data-rings="' 'data-rings="30d,60d,90d'
 check compare "q=ns:$ns%20-kind:Service&color=team" 'data-match="'
+# a kind translation (Route→HTTPRoute, DeploymentConfig→Deployment), selected by its target id
+tid=$(awk '/"target_id": / { v = $0; sub(/^[^:]*: "/, "", v); sub(/",?$/, "", v); print v; exit }' "$out/compare/json/compare.json")
+if [ -n "$tid" ]; then
+  check compare "sel=$tid&color=state"
+  check compare "q=kind:Route,kind:HTTPRoute&sel=$tid" 'data-match="'
+else
+  echo "      no kind translation in the comparison of $src and $tgt: selection state skipped"
+fi
 
 # search: several terms (OR), exclusion and a field prefix, checked by the number of matching
 # resources the render page reports in data-match against data-shown

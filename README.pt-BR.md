@@ -185,8 +185,11 @@ recursos dos snapshots renderizados, arredondados: `270d,1y,1.5y,2y,2.5y,3y` na 
 e anéis custom com os sufixos de unidade `m`, `h`, `d` e `y`, `--rings 30m,2h,1d,7d,30d` ou
 `--rings 30d,90d,180d,1y,2y,3y,5y` (número sem sufixo é dia).
 
-O `compare` pareia recursos por `group/Kind/namespace/name` (os nomes dos estados ficam em inglês
-na saída):
+O `compare` pareia recursos por `group/Kind/namespace/name` e depois pareia o que o destino serve
+com outro kind: uma Route do OpenShift com uma HTTPRoute ou um Ingress (por host, depois por nome)
+e uma DeploymentConfig com um Deployment (por nome), no mesmo namespace, comparados nos fatos que
+os dois kinds expressam e mostrados com a tradução (`Route→HTTPRoute`) no JSON e na página (os
+nomes dos estados ficam em inglês na saída):
 
 | Estado | Significado |
 |---|---|

@@ -3,6 +3,8 @@ package compare
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -206,5 +208,150 @@ func TestDeterministic(t *testing.T) {
 	b, _ := json.Marshal(Compare(src, tgt))
 	if !bytes.Equal(a, b) {
 		t.Fatalf("two comparisons of the same input differ:\n%s\n%s", a, b)
+	}
+}
+
+// Kind translations (K25), synthetic: an OpenShift source and a target that serves the same apps
+// with Gateway API, Ingress and Deployments.
+func translationSnaps() (*snapshot.Snapshot, *snapshot.Snapshot) {
+	src := &snapshot.Snapshot{SchemaVersion: 1, CollectedAt: t0,
+		Cluster:    snapshot.Cluster{ID: "aaaaaaaaaaaa", Context: "source", Distro: "openshift"},
+		Namespaces: []snapshot.Namespace{{Name: "ns-a", Team: "team-a"}, {Name: "ns-b"}},
+		Resources: []snapshot.Resource{
+			res("route.openshift.io/Route/ns-a/web", "ns-a", "Route", "sha256:r1", map[string]any{
+				"host": "web-ns-a.apps.ocp1.example.com", "tls_termination": "edge", "backends": []string{"web:80"}}),
+			res("route.openshift.io/Route/ns-a/shop", "ns-a", "Route", "sha256:r2", map[string]any{
+				"host": "shop.example.com", "backends": []string{"shop"}}),
+			res("route.openshift.io/Route/ns-a/legacy", "ns-a", "Route", "sha256:r3", map[string]any{
+				"host": "legacy.example.com"}),
+			res("apps.openshift.io/DeploymentConfig/ns-a/portal", "ns-a", "DeploymentConfig", "sha256:d1", map[string]any{
+				"images": []string{"reg/portal:1"}, "replicas": int64(2), "triggers": []string{"ConfigChange"},
+				"strategy": "Rolling", "end_of_life": "deprecated", "pods": int64(2)}),
+			res("apps.openshift.io/DeploymentConfig/ns-b/batch", "ns-b", "DeploymentConfig", "sha256:d2", nil),
+			res("core/Service/ns-a/web", "ns-a", "Service", "sha256:s1", nil),
+		},
+		Edges: []snapshot.Edge{{From: "route.openshift.io/Route/ns-a/web", To: "core/Service/ns-a/web", Rel: "routes"}},
+	}
+	tgt := &snapshot.Snapshot{SchemaVersion: 1, CollectedAt: t0,
+		Cluster:    snapshot.Cluster{ID: "bbbbbbbbbbbb", Context: "target", Distro: "eks"},
+		Namespaces: []snapshot.Namespace{{Name: "ns-a"}, {Name: "gw"}},
+		Resources: []snapshot.Resource{
+			// another name, the same host: paired by host
+			res("gateway.networking.k8s.io/HTTPRoute/ns-a/web-gw", "ns-a", "HTTPRoute", "sha256:h1", map[string]any{
+				"hosts": []string{"web-ns-a.apps.ocp1.example.com"}, "paths": []string{"/"}, "backends": []string{"web:80"}}),
+			// the same name, a new host: paired by name, drift on hosts
+			res("networking.k8s.io/Ingress/ns-a/shop", "ns-a", "Ingress", "sha256:i1", map[string]any{
+				"hosts": []string{"shop.target.example.com"}, "paths": []string{"/"}, "tls": false,
+				"backends": []string{"shop:80"}, "missing_refs": []string{"Service/shop"}}),
+			res("apps/Deployment/ns-a/portal", "ns-a", "Deployment", "sha256:p1", map[string]any{
+				"images": []string{"reg/portal:2"}, "replicas": int64(2), "pods": int64(1)}),
+			res("gateway.networking.k8s.io/HTTPRoute/ns-a/other", "ns-a", "HTTPRoute", "sha256:h2", map[string]any{
+				"hosts": []string{"other.example.com"}}),
+			res("gateway.networking.k8s.io/Gateway/gw/public", "gw", "Gateway", "sha256:g1", map[string]any{
+				"listeners": []string{"HTTPS:443 *.example.com"}}),
+			res("core/Service/ns-a/web", "ns-a", "Service", "sha256:s1", nil),
+		},
+		Edges: []snapshot.Edge{
+			{From: "gateway.networking.k8s.io/HTTPRoute/ns-a/web-gw", To: "gateway.networking.k8s.io/Gateway/gw/public", Rel: "attaches"},
+			{From: "gateway.networking.k8s.io/HTTPRoute/ns-a/web-gw", To: "core/Service/ns-a/web", Rel: "routes"}},
+	}
+	return src, tgt
+}
+
+func TestTranslations(t *testing.T) {
+	r := Compare(translationSnaps())
+	want := map[string]struct{ state, target, translation, diff string }{
+		"route.openshift.io/Route/ns-a/web":              {Equal, "gateway.networking.k8s.io/HTTPRoute/ns-a/web-gw", "Route→HTTPRoute", ""},
+		"route.openshift.io/Route/ns-a/shop":             {Drift, "networking.k8s.io/Ingress/ns-a/shop", "Route→Ingress", "hosts"},
+		"route.openshift.io/Route/ns-a/legacy":           {Pending, "", "", ""},
+		"apps.openshift.io/DeploymentConfig/ns-a/portal": {Drift, "apps/Deployment/ns-a/portal", "DeploymentConfig→Deployment", "images"},
+		"apps.openshift.io/DeploymentConfig/ns-b/batch":  {Pending, "", "", ""},
+		"gateway.networking.k8s.io/HTTPRoute/ns-a/other": {New, "", "", ""},
+		"core/Service/ns-a/web":                          {Equal, "", "", ""},
+		"gateway.networking.k8s.io/Gateway/gw/public":    {New, "", "", ""},
+	}
+	if len(r.Items) != len(want) {
+		t.Fatalf("items: %d, want %d: %+v", len(r.Items), len(want), r.Items)
+	}
+	for id, w := range want {
+		it, ok := r.Find(id)
+		var facts []string
+		for _, d := range it.Diff {
+			facts = append(facts, d.Fact)
+		}
+		if !ok || it.ID != id || it.State != w.state || it.TargetID != w.target || it.Translation != w.translation ||
+			strings.Join(facts, ",") != w.diff {
+			t.Errorf("%s: %+v, want %+v", id, it, w)
+		}
+	}
+	// the target of a pair is found through the pair, never as an item of its own
+	if it, ok := r.Find("networking.k8s.io/Ingress/ns-a/shop"); !ok || it.ID != "route.openshift.io/Route/ns-a/shop" {
+		t.Errorf("Find(target id) = %+v", it)
+	}
+	// a translated pair counts once on each side and as covered: in ns-a, web, shop and portal
+	// plus the Service are covered, legacy is pending, of 5 in the source
+	var ns Summary
+	for _, s := range r.Namespaces {
+		if s.NS == "ns-a" {
+			ns = s
+		}
+	}
+	if ns.Source != 5 || ns.Target != 5 || ns.Equal != 2 || ns.Drift != 2 || ns.Pending != 1 || ns.New != 1 ||
+		ns.Coverage == nil || *ns.Coverage != 0.8 || ns.Team != "team-a" {
+		t.Errorf("ns-a: %+v cov=%v", ns, deref(ns.Coverage))
+	}
+	if tot := r.Totals; tot.Source != 6 || tot.Target != 6 || tot.Pending != 2 || tot.New != 2 {
+		t.Errorf("totals: %+v", tot)
+	}
+	// the drift lists only facts both kinds express: the DeploymentConfig triggers and the volatile
+	// pod count are left out
+	dc, _ := r.Find("apps.openshift.io/DeploymentConfig/ns-a/portal")
+	if len(dc.Diff) != 1 || !strings.Contains(fmt.Sprint(dc.Diff[0].Target), "reg/portal:2") {
+		t.Errorf("DeploymentConfig diff: %+v", dc.Diff)
+	}
+}
+
+// Host, path, TLS (through the Gateway of an HTTPRoute), backend Service and port.
+func TestTranslatedRouteFacts(t *testing.T) {
+	src, tgt := translationSnaps()
+	web := func(s *snapshot.Snapshot, id string) *snapshot.Resource {
+		for i := range s.Resources {
+			if s.Resources[i].ID == id {
+				return &s.Resources[i]
+			}
+		}
+		t.Fatalf("%s missing", id)
+		return nil
+	}
+	hr := web(tgt, "gateway.networking.k8s.io/HTTPRoute/ns-a/web-gw")
+	hr.Facts["backends"] = []string{"web:8080"}
+	hr.Facts["paths"] = []string{"/api"}
+	tgt.Resources = append(tgt.Resources[:4], tgt.Resources[5:]...) // no Gateway: TLS unknown
+	it, _ := Compare(src, tgt).Find("route.openshift.io/Route/ns-a/web")
+	var facts []string
+	for _, d := range it.Diff {
+		facts = append(facts, d.Fact)
+	}
+	if it.State != Drift || strings.Join(facts, ",") != "paths,ports" {
+		t.Errorf("web: %+v (want drift on paths and ports, tls not compared without the Gateway)", it)
+	}
+	// an older collector without backend ports, paths or Ingress tls: those facts are not compared
+	shop := web(tgt, "networking.k8s.io/Ingress/ns-a/shop")
+	delete(shop.Facts, "tls")
+	delete(shop.Facts, "paths")
+	shop.Facts["hosts"] = []any{"shop.example.com"}
+	if it, _ := Compare(src, tgt).Find("route.openshift.io/Route/ns-a/shop"); it.State != Equal {
+		t.Errorf("shop without tls and paths facts: %+v", it)
+	}
+}
+
+// diff (two snapshots of one cluster) pairs by id only.
+func TestTimelineDoesNotTranslate(t *testing.T) {
+	src, tgt := translationSnaps()
+	tgt.Cluster.ID = src.Cluster.ID
+	for _, it := range CompareTimeline(src, tgt).Items {
+		if it.Translation != "" || it.TargetID != "" {
+			t.Errorf("translated in a timeline: %+v", it)
+		}
 	}
 }

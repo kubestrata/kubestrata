@@ -299,7 +299,7 @@ decides what counts:
 |---|---|
 | Deployment, StatefulSet, DaemonSet, DeploymentConfig | images, replicas, CPU and memory requests/limits, service account, PVC names, node selector (DeploymentConfig also strategy and triggers) |
 | Service | type, ports |
-| Ingress, Route, HTTPRoute | hosts, paths, TLS secret names, class |
+| Ingress, Route, HTTPRoute | hosts, paths, TLS (Ingress `tls`, Route termination), backends (`service:port`, the port resolved to the Service port when the Service is in the snapshot), class |
 | PVC | storageClass, size, accessModes |
 | ConfigMap | key names + content hash |
 | Secret | type + key count |
@@ -310,17 +310,32 @@ Volume, envFrom and Secret/ConfigMap references are edges, not facts: they do no
 fingerprint.
 
 Drift detail = every fact outside the volatile set whose value differs, with both values (a side
-without the fact has none). Because the key holds group/Kind, a **kind translation** shows as a
-pair: an OpenShift Route or an Ingress replaced by a Gateway API HTTPRoute is pending in the source
-and new in the target. Pairing across kinds belongs to the migration units of F2. Objects with
-generated names (PersistentVolumes `pvc-<uid>`) never pair either.
+without the fact has none).
+
+The key holds group/Kind, so a **kind translation** would show as pending in the source and new in
+the target. `compare` pairs two of them after the pairing by id, in the same namespace, with what
+is left pending and new:
+
+| Source | Target | Paired by | Facts compared |
+|---|---|---|---|
+| OpenShift Route | Gateway API HTTPRoute or Ingress | a host of the target is the Route host (the same name first), else the same name | `hosts`, `paths` (no path is `/`), `tls` (Route termination; Ingress `tls`; for an HTTPRoute, an HTTPS or TLS listener on a Gateway it attaches to), `backends` (Service names), `ports` (`service:port`) |
+| DeploymentConfig | Deployment | the same name | the pod template facts: images, replicas, requests and limits, service account, PVCs, node selector (not `triggers`, `strategy`, `end_of_life`) |
+
+The pair is one item under the source id, with `target_id` and `translation`
+(`"Route→HTTPRoute"`), state `equal` or `drift`, and counts once on each side and as covered in the
+namespace coverage. Only the facts both sides express are compared: a fact one side cannot tell
+(an HTTPRoute whose Gateway is not in the snapshot, an Ingress collected before 0.2 without
+`paths`) is left out. Each target pairs once, sources in id order. `diff` does not translate: in
+one cluster, a Route replaced by an HTTPRoute is gone and new. An Ingress replaced by an
+HTTPRoute, and objects with generated names (PersistentVolumes `pvc-<uid>`), do not pair.
 
 Per-namespace summary (`_` = cluster-scoped): source total, target total, equal, drift, pending,
 new and coverage = (equal + drift) / source total, `null` when the source has nothing there.
 Totals and the default table leave system namespaces out, like the default view.
 
 `--format json` prints one document (`schema_version` 1) with `source`, `target`, `totals`,
-`namespaces`, `items` (`id`, `ns`, `kind`, `state`, `diff[]`) plus `index` and `url` of the site:
+`namespaces`, `items` (`id`, `ns`, `kind`, `state`, `diff[]`, and `target_id` and `translation`
+for a kind translation) plus `index` and `url` of the site:
 
 ```json
 {"schema_version": 1,

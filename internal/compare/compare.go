@@ -84,13 +84,19 @@ type Summary struct {
 	Coverage *float64 `json:"coverage"`
 }
 
-// Item is the state of one identity.
+// Item is the state of one identity, or of a kind translation pair.
 type Item struct {
 	ID    string `json:"id"`
 	NS    string `json:"ns,omitempty"`
 	Kind  string `json:"kind"`
 	State string `json:"state"`
-	Diff  []Diff `json:"diff,omitempty"`
+	// TargetID is the target resource of a kind translation, when the target serves the source
+	// resource with another kind (an OpenShift Route with an Ingress or HTTPRoute, a
+	// DeploymentConfig with a Deployment); ID and Kind are the source's. Translation names the pair,
+	// source kind → target kind ("Route→HTTPRoute"). Diff then holds the facts both kinds express.
+	TargetID    string `json:"target_id,omitempty"`
+	Translation string `json:"translation,omitempty"`
+	Diff        []Diff `json:"diff,omitempty"`
 	// Collector lists the facts only one side has, when the snapshots come from different
 	// kubestrata versions; they do not make the item drift.
 	Collector []string `json:"collector_facts,omitempty"`
@@ -103,8 +109,12 @@ type Diff struct {
 	Target any    `json:"target,omitempty"`
 }
 
-// Compare classifies every resource of src and tgt.
-func Compare(src, tgt *snapshot.Snapshot) *Result {
+// Compare classifies every resource of src and tgt. A source Route or DeploymentConfig left
+// pending pairs with the Ingress, HTTPRoute or Deployment that replaces it in the target (see
+// pairTranslations): the pair is one item, equal or drift, and counts as covered.
+func Compare(src, tgt *snapshot.Snapshot) *Result { return compareSnapshots(src, tgt, true) }
+
+func compareSnapshots(src, tgt *snapshot.Snapshot, translate bool) *Result {
 	res := &Result{SchemaVersion: SchemaVersion, Source: side(src), Target: side(tgt),
 		Namespaces: []Summary{}, Items: []Item{}}
 	mixed := src.Tool.Version != tgt.Tool.Version
@@ -112,6 +122,14 @@ func Compare(src, tgt *snapshot.Snapshot) *Result {
 		res.Collector = &CollectorChange{From: src.Tool.Version, To: tgt.Tool.Version}
 	}
 	a, b := index(src), index(tgt)
+	pairs := map[string]string{}
+	if translate {
+		pairs = pairTranslations(a, b)
+	}
+	paired := map[string]bool{} // target ids taken by a translation
+	for _, t := range pairs {
+		paired[t] = true
+	}
 	ids := make([]string, 0, len(a)+len(b))
 	for id := range a {
 		ids = append(ids, id)
@@ -151,6 +169,9 @@ func Compare(src, tgt *snapshot.Snapshot) *Result {
 	}
 
 	for _, id := range ids {
+		if paired[id] {
+			continue
+		}
 		ra, inA := a[id]
 		rb, inB := b[id]
 		r := ra
@@ -158,7 +179,17 @@ func Compare(src, tgt *snapshot.Snapshot) *Result {
 			r = rb
 		}
 		it := Item{ID: id, NS: r.NS, Kind: r.Kind}
+		tid, translated := pairs[id]
+		if translated {
+			rb, inB = b[tid], true
+			it.TargetID, it.Translation = tid, ra.Kind+"→"+rb.Kind
+		}
 		switch {
+		case translated:
+			it.State = Equal
+			if it.Diff = translatedDiff(ra, rb, src, tgt); len(it.Diff) > 0 {
+				it.State = Drift
+			}
 		case inA && inB:
 			it.State = Equal
 			if ra.FP == "" || ra.FP != rb.FP {
@@ -260,8 +291,9 @@ type TimelineSummary struct {
 func (s TimelineSummary) Changes() int { return s.Drift + s.Gone + s.New }
 
 // CompareTimeline pairs the resources of two snapshots of one cluster, from the older to the newer.
+// It pairs by id only: a Route replaced by an HTTPRoute in the same cluster is gone and new.
 func CompareTimeline(from, to *snapshot.Snapshot) *Timeline {
-	r := Compare(from, to)
+	r := compareSnapshots(from, to, false)
 	sum := func(s Summary) TimelineSummary {
 		return TimelineSummary{NS: s.NS, Team: s.Team, System: s.System, Source: s.Source, Target: s.Target,
 			Equal: s.Equal, Drift: s.Drift, Gone: s.Pending, New: s.New}
@@ -280,11 +312,17 @@ func CompareTimeline(from, to *snapshot.Snapshot) *Timeline {
 	return t
 }
 
-// Find returns the item of an identity; false when neither side has it.
+// Find returns the item of an identity, the target id of a kind translation included; false when
+// neither side has it.
 func (r *Result) Find(id string) (Item, bool) {
 	i := sort.Search(len(r.Items), func(i int) bool { return r.Items[i].ID >= id })
 	if i < len(r.Items) && r.Items[i].ID == id {
 		return r.Items[i], true
+	}
+	for _, it := range r.Items {
+		if it.TargetID == id {
+			return it, true
+		}
 	}
 	return Item{}, false
 }

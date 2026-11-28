@@ -5,6 +5,7 @@ import (
 	"io"
 	"math"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -138,9 +139,37 @@ func printCompare(w io.Writer, r *compare.Result, url string) error {
 	if note := collectorNote(r.Collector); note != "" {
 		lines = append(lines, note)
 	}
+	if note := translationNote(r.Items); note != "" {
+		lines = append(lines, note)
+	}
 	lines = append(lines, url)
 	_, err := lipgloss.Fprintln(w, strings.Join(lines, "\n"))
 	return err
+}
+
+// translationNote counts the pairs across kinds (Route→HTTPRoute, DeploymentConfig→Deployment),
+// which the coverage counts as migrated.
+func translationNote(items []compare.Item) string {
+	n := map[string]int{}
+	var kinds []string
+	for _, it := range items {
+		if it.Translation == "" {
+			continue
+		}
+		if n[it.Translation] == 0 {
+			kinds = append(kinds, it.Translation)
+		}
+		n[it.Translation]++
+	}
+	if len(kinds) == 0 {
+		return ""
+	}
+	sort.Strings(kinds)
+	parts := make([]string, len(kinds))
+	for i, k := range kinds {
+		parts[i] = fmt.Sprintf("%s %d", k, n[k])
+	}
+	return "kind translations, paired across kinds and counted as covered: " + strings.Join(parts, ", ")
 }
 
 // pct rounds half up like Math.round in the page (coverage is never negative), so the CLI and

@@ -50,7 +50,17 @@
     "#7986cb", "#a1887f", "#90a4ae", "#dce775"];
   var DAY = 86400000, CAP = 1095, RR_MIN = 0.05;
   var ITEM = {};
-  if (CMP) CMP.items.forEach(function (it) { ITEM[it.id] = it; });
+  // a kind translation (Route→HTTPRoute, DeploymentConfig→Deployment) is one item under both ids
+  if (CMP) CMP.items.forEach(function (it) { ITEM[it.id] = it; if (it.target_id) ITEM[it.target_id] = it; });
+  // identity of a resource: the source id of its translation pair, else its own id
+  function keyOf(id) { return ITEM[id] ? ITEM[id].id : id; }
+  // id of the same identity in a model: the pair's other side when the model has not this one
+  function idIn(m, id) {
+    if (!id || m.byId[id]) return id;
+    var it = ITEM[id];
+    if (!it || !it.target_id) return id;
+    return m.byId[it.id] ? it.id : it.target_id;
+  }
 
   // ---- state (initial values from the config, then from the URL hash)
   // ns: namespace filter ("_" = cluster-scoped), exact match on the resource namespace; q: free-text search
@@ -311,8 +321,8 @@
     var seen = {}, c = { equal: 0, drift: 0, pending: 0, "new": 0 };
     panes.forEach(function (p) {
       model(p.cluster).nodes.forEach(function (n) {
-        if (!visible(n) || seen[n.id]) return;
-        seen[n.id] = true;
+        if (!visible(n) || seen[keyOf(n.id)]) return;
+        seen[keyOf(n.id)] = true;
         var s = stateOf(n.id);
         if (s) c[s]++;
       });
@@ -457,7 +467,7 @@
       }
     });
     // edges of the focused node
-    var fid = hov || st.sel;
+    var fid = idIn(m, hov || st.sel);
     var focus = (fid && m.byId[fid]) || null;
     var at = {};
     p.pos.forEach(function (q) { q.x = q.rr * R * Math.cos(q.a); q.y = q.rr * R * Math.sin(q.a); at[q.n.id] = q; });
@@ -554,13 +564,13 @@
     t.appendChild(el("b", null, n.r.kind + " " + (n.r.ns ? n.r.ns + "/" : "") + n.r.name));
     if (COMPARE) {
       ["source", "target"].forEach(function (label, i) {
-        var mi = model(panes[i].cluster), x = mi.byId[n.id];
-        if (x) t.appendChild(el("span", { class: "ln" }, label + ": " + ageText(ageOf(mi, x)) + " · " + x.r.manager));
+        var mi = model(panes[i].cluster), x = mi.byId[idIn(mi, n.id)];
+        if (x) t.appendChild(el("span", { class: "ln" }, label + ": " + x.r.kind + " · " + ageText(ageOf(mi, x)) + " · " + x.r.manager));
       });
       var it = ITEM[n.id];
       if (it) {
-        var s = el("span", { class: "ln" }, it.state + (it.diff && it.diff.length ? ": " +
-          it.diff.map(function (d) { return d.fact; }).join(", ") : ""));
+        var s = el("span", { class: "ln" }, it.state + (it.translation ? " (" + it.translation + ")" : "") +
+          (it.diff && it.diff.length ? ": " + it.diff.map(function (d) { return d.fact; }).join(", ") : ""));
         s.style.color = STATE_COLOR[it.state];
         t.appendChild(s);
       }
@@ -696,7 +706,7 @@
     var box = $("panel");
     box.textContent = "";
     var ms = panes.map(function (p) { return model(p.cluster); });
-    var a = st.sel && ms[0].byId[st.sel], b = st.sel && ms[1].byId[st.sel];
+    var a = st.sel && ms[0].byId[idIn(ms[0], st.sel)], b = st.sel && ms[1].byId[idIn(ms[1], st.sel)];
     if (!a && !b) {
       var sa = ms[0].snap, sb = ms[1].snap, ca = sa.cluster, cb = sb.cluster;
       box.appendChild(el("h2", null, ca.context + " → " + cb.context));
@@ -732,6 +742,12 @@
     box.appendChild(el("h2", null, r.kind + " " + r.name));
     box.appendChild(el("div", { class: "sub" }, r.id));
     box.appendChild(stateLine(it.state, it.state + " — " + STATE_HINT[it.state]));
+    if (it.translation) {
+      var tr = el("div", { class: "translation" }, "kind translation " + it.translation + ": the target serves " +
+        it.id.split("/").slice(1).join("/") + " as " + it.target_id.split("/").slice(1).join("/") +
+        "; compared on the facts both kinds express");
+      box.appendChild(tr);
+    }
     var ra = a ? a.r : {}, rb = b ? b.r : {};
     var t2 = table3();
     row3(t2, "namespace", a && (ra.ns || "(cluster-scoped)"), b && (rb.ns || "(cluster-scoped)"));
@@ -869,7 +885,7 @@
     // each identity counted once over the panes
     panes.forEach(function (p) {
       model(p.cluster).nodes.forEach(function (x) {
-        if ((st.system || !x.system) && (!st.ns || x.ns === st.ns) && !cat[x.id]) cat[x.id] = x.cat;
+        if ((st.system || !x.system) && (!st.ns || x.ns === st.ns) && !cat[keyOf(x.id)]) cat[keyOf(x.id)] = x.cat;
       });
     });
     box.textContent = "";
@@ -911,7 +927,7 @@
     var seen = {}, hit = {}, hits = 0, shown = 0;
     panes.forEach(function (p) {
       p.pos.forEach(function (o) {
-        var id = o.n.id;
+        var id = keyOf(o.n.id);
         if (!seen[id]) { seen[id] = true; shown++; }
         if (st.q && !hit[id] && matches(o.n)) { hit[id] = true; hits++; }
       });

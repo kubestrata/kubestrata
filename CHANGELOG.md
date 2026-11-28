@@ -40,6 +40,18 @@ All notable changes to this project are documented here. Versions follow
   a field exactly (`*` wildcard; OR within a field, AND across fields). A single term works as
   before. The query stays in the URL hash (`q=`) on the render and compare pages; the page writes
   `data-match` for automated checks.
+- `compare` pairs OpenShift kinds with what the target serves instead: a Route with an HTTPRoute or
+  an Ingress of the same namespace (a host of the target is the Route host, the same name first;
+  else the same name) and a DeploymentConfig with the Deployment of the same name. The pair is one
+  item with `target_id` and `translation` (`"Route→HTTPRoute"`), equal or drift on the facts both
+  kinds express (host, path, TLS on/off, backend Service and port; images, replicas and the rest of
+  the pod template), and counts as covered. The page highlights both sides and names the
+  translation in the detail panel; the text output counts the translations. `diff` does not
+  translate. On the kuberito lab, `auth/sso` (Route → HTTPRoute) now drifts on its hosts instead of
+  pending + new.
+- Ingress, HTTPRoute and Route facts gain `backends` (`service:port`, the port resolved to the
+  Service port), Ingress and HTTPRoute `paths`, Ingress `tls`. They enter the fingerprint; between
+  snapshots of 0.1.x and this version they are listed as collector facts, not as drift.
 
 ## 0.1.4 — 2026-11-27
 

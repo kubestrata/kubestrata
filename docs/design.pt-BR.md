@@ -305,7 +305,7 @@ acusaria diferenças de default entre versões do Kubernetes; a projeção por k
 |---|---|
 | Deployment, StatefulSet, DaemonSet, DeploymentConfig | imagens, réplicas, requests/limits de CPU e memória, service account, nomes de PVC, node selector (o DeploymentConfig também strategy e triggers) |
 | Service | type, ports |
-| Ingress, Route, HTTPRoute | hosts, paths, nomes dos Secrets de TLS, class |
+| Ingress, Route, HTTPRoute | hosts, paths, TLS (`tls` do Ingress, terminação da Route), backends (`service:porta`, com a porta resolvida para a porta do Service quando o Service está no snapshot), class |
 | PVC | storageClass, tamanho, accessModes |
 | ConfigMap | nomes de chave + hash do conteúdo |
 | Secret | tipo + número de chaves |
@@ -316,17 +316,32 @@ Referências de volume, envFrom e Secret/ConfigMap são arestas, não fatos: nã
 fingerprint.
 
 Detalhe do drift = todo fato fora do conjunto volátil cujo valor difere, com os dois valores (o lado
-que não tem o fato fica sem valor). Como a chave inclui group/Kind, uma **tradução de kind** aparece
-como par: uma Route do OpenShift ou um Ingress trocado por uma HTTPRoute da Gateway API fica
-pendente na origem e novo no destino. Parear kinds diferentes é das unidades de migração da F2.
-Objetos com nome gerado (PersistentVolumes `pvc-<uid>`) também nunca formam par.
+que não tem o fato fica sem valor).
+
+A chave inclui group/Kind, então uma **tradução de kind** apareceria como pendente na origem e novo
+no destino. O `compare` pareia duas delas depois do pareamento por id, no mesmo namespace, com o que
+sobrou pendente e novo:
+
+| Origem | Destino | Pareado por | Fatos comparados |
+|---|---|---|---|
+| Route do OpenShift | HTTPRoute da Gateway API ou Ingress | um host do destino é o host da Route (o mesmo nome primeiro), senão o mesmo nome | `hosts`, `paths` (sem path é `/`), `tls` (terminação da Route; `tls` do Ingress; numa HTTPRoute, um listener HTTPS ou TLS num Gateway a que ela se liga), `backends` (nomes de Service), `ports` (`service:porta`) |
+| DeploymentConfig | Deployment | o mesmo nome | os fatos do template de pod: imagens, réplicas, requests e limits, service account, PVCs, node selector (não `triggers`, `strategy`, `end_of_life`) |
+
+O par é um item só sob o id da origem, com `target_id` e `translation` (`"Route→HTTPRoute"`),
+estado `equal` ou `drift`, e conta uma vez de cada lado e como coberto na cobertura do namespace.
+Só os fatos que os dois lados expressam são comparados: um fato que um lado não sabe dizer (uma
+HTTPRoute cujo Gateway não está no snapshot, um Ingress coletado antes da 0.2 sem `paths`) fica de
+fora. Cada destino pareia uma vez, as origens em ordem de id. O `diff` não traduz: num cluster só,
+uma Route trocada por uma HTTPRoute é gone e new. Um Ingress trocado por uma HTTPRoute e objetos com
+nome gerado (PersistentVolumes `pvc-<uid>`) não formam par.
 
 Resumo por namespace (`_` = escopo de cluster): total na origem, total no destino, equal, drift,
 pending, new e cobertura = (equal + drift) / total na origem, `null` quando a origem não tem nada
 ali. Os totais e a tabela padrão deixam de fora os namespaces de sistema, como a visão padrão.
 
 `--format json` imprime um documento (`schema_version` 1) com `source`, `target`, `totals`,
-`namespaces`, `items` (`id`, `ns`, `kind`, `state`, `diff[]`) e o `index` e a `url` do site:
+`namespaces`, `items` (`id`, `ns`, `kind`, `state`, `diff[]`, e `target_id` e `translation` numa
+tradução de kind) e o `index` e a `url` do site:
 
 ```json
 {"schema_version": 1,

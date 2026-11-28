@@ -481,6 +481,20 @@ func (b *builder) finish() ([]snapshot.Resource, []snapshot.Edge) {
 		}
 	}
 	for _, it := range out {
+		if len(it.backends) > 0 {
+			var bs []string
+			for _, b := range it.backends {
+				if svc := byID[snapshot.ID("", "Service", it.res.NS, b.svc)]; svc != nil {
+					b.port = servicePort(svc.ports, b)
+				}
+				if b.port == "" {
+					bs = append(bs, b.svc)
+				} else {
+					bs = append(bs, b.svc+":"+b.port)
+				}
+			}
+			it.res.Facts["backends"] = uniqSorted(bs)
+		}
 		var missing []string
 		for _, r := range it.refs {
 			if r.name == "" {

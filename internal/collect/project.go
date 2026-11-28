@@ -30,6 +30,19 @@ const (
 
 type ref struct{ group, kind, ns, name, rel string }
 
+// backend is a Service an Ingress, HTTPRoute or Route sends traffic to. Port is as written: the
+// Service port (number or name) for an Ingress or HTTPRoute, the target port for a Route.
+type backend struct {
+	svc, port string
+	target    bool // port is a Route targetPort
+}
+
+// svcPort is one port of a Service, kept to resolve backend ports.
+type svcPort struct {
+	name, target string
+	port         int64
+}
+
 // item is a resource being built, with the data needed for owners and edges that does not go
 // into the snapshot.
 type item struct {
@@ -39,6 +52,23 @@ type item struct {
 	tmplLabels map[string]string
 	selector   map[string]string
 	refs       []ref
+	backends   []backend
+	ports      []svcPort
+}
+
+// servicePort resolves a backend port to the Service port number when the Service is known: by
+// port name or number for an Ingress or HTTPRoute, by port name or target port for a Route.
+// Otherwise the port stays as written.
+func servicePort(ports []svcPort, b backend) string {
+	if b.port == "" {
+		return ""
+	}
+	for _, p := range ports {
+		if p.name != "" && p.name == b.port || !b.target && itoa(p.port) == b.port || b.target && p.target == b.port {
+			return itoa(p.port)
+		}
+	}
+	return b.port
 }
 
 func m(v any) map[string]any {
@@ -324,6 +354,11 @@ func kindFacts(it *item, u *unstructured.Unstructured) bool {
 			ports = append(ports, itoa(port)+"/"+proto)
 		}
 		f["ports"] = uniqSorted(ports)
+		for _, p := range sl(spec["ports"]) {
+			pm := m(p)
+			port, _ := num(pm["port"])
+			it.ports = append(it.ports, svcPort{name: s(pm["name"]), target: anyString(pm["targetPort"]), port: port})
+		}
 		if sel := strMap(spec["selector"]); len(sel) > 0 {
 			it.selector = sel
 			f["selector"] = sel
@@ -340,19 +375,43 @@ func kindFacts(it *item, u *unstructured.Unstructured) bool {
 			class = ann["kubernetes.io/ingress.class"]
 		}
 		f["class"] = class
-		var hosts []string
+		var hosts, paths []string
+		addBackend := func(svc map[string]any) {
+			if name := s(svc["name"]); name != "" {
+				port := anyString(path(svc, "port", "number"))
+				if port == "" || port == "0" {
+					port = s(path(svc, "port", "name"))
+				}
+				it.refs = append(it.refs, ref{"", "Service", ns, name, RelRoutes})
+				it.backends = append(it.backends, backend{svc: name, port: port})
+			}
+		}
 		for _, r := range sl(spec["rules"]) {
 			rm := m(r)
 			hosts = append(hosts, s(rm["host"]))
 			for _, p := range sl(path(rm, "http", "paths")) {
-				it.refs = append(it.refs, ref{"", "Service", ns, s(path(m(p), "backend", "service", "name")), RelRoutes})
+				pth := s(m(p)["path"])
+				if pth == "" {
+					pth = "/"
+				}
+				paths = append(paths, pth)
+				addBackend(m(path(m(p), "backend", "service")))
 			}
 		}
-		it.refs = append(it.refs, ref{"", "Service", ns, s(path(spec, "defaultBackend", "service", "name")), RelRoutes})
+		if def := m(path(spec, "defaultBackend", "service")); def != nil {
+			addBackend(def)
+			if len(paths) == 0 {
+				paths = append(paths, "/")
+			}
+		}
 		for _, t := range sl(spec["tls"]) {
 			it.refs = append(it.refs, ref{"", "Secret", ns, s(m(t)["secretName"]), RelTLS})
 		}
 		f["hosts"] = uniqSorted(hosts)
+		if len(paths) > 0 {
+			f["paths"] = uniqSorted(paths)
+		}
+		f["tls"] = len(sl(spec["tls"])) > 0
 		if class == "nginx" {
 			f["end_of_life"] = "ingress-nginx was retired in March 2026; target: Gateway API"
 		}
@@ -365,16 +424,35 @@ func kindFacts(it *item, u *unstructured.Unstructured) bool {
 		if term := s(path(spec, "tls", "termination")); term != "" {
 			f["tls_termination"] = term
 		}
-		it.refs = append(it.refs, ref{"", "Service", ns, s(path(spec, "to", "name")), RelRoutes})
-		for _, b := range sl(spec["alternateBackends"]) {
-			it.refs = append(it.refs, ref{"", "Service", ns, s(m(b)["name"]), RelRoutes})
+		port := anyString(path(spec, "port", "targetPort"))
+		for _, b := range append([]any{spec["to"]}, sl(spec["alternateBackends"])...) {
+			if name := s(m(b)["name"]); name != "" {
+				it.refs = append(it.refs, ref{"", "Service", ns, name, RelRoutes})
+				it.backends = append(it.backends, backend{svc: name, port: port, target: true})
+			}
 		}
 	case "HTTPRoute":
-		var hosts []string
+		var hosts, paths []string
 		for _, h := range sl(spec["hostnames"]) {
 			hosts = append(hosts, s(h))
 		}
 		f["hosts"] = uniqSorted(hosts)
+		for _, r := range sl(spec["rules"]) {
+			matches := sl(m(r)["matches"])
+			if len(matches) == 0 {
+				paths = append(paths, "/") // a rule without matches is PathPrefix /
+			}
+			for _, mt := range matches {
+				if v := s(path(m(mt), "path", "value")); v != "" {
+					paths = append(paths, v)
+				} else {
+					paths = append(paths, "/")
+				}
+			}
+		}
+		if len(paths) > 0 {
+			f["paths"] = uniqSorted(paths)
+		}
 		for _, p := range sl(spec["parentRefs"]) {
 			pm := m(p)
 			pns := s(pm["namespace"])
@@ -388,6 +466,9 @@ func kindFacts(it *item, u *unstructured.Unstructured) bool {
 				bm := m(b)
 				if k := s(bm["kind"]); k == "" || k == "Service" {
 					it.refs = append(it.refs, ref{"", "Service", ns, s(bm["name"]), RelRoutes})
+					if name := s(bm["name"]); name != "" {
+						it.backends = append(it.backends, backend{svc: name, port: anyString(bm["port"])})
+					}
 				}
 			}
 		}
