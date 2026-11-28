@@ -172,6 +172,30 @@ kubectl delete -f deploy/rbac/kubestrata-reader-no-secrets.yaml   # when the inv
 kubeconfig names a CA file (`certificate-authority`) instead of embedding it, pass that file to
 `--certificate-authority`.
 
+### Kubeconfig hygiene
+
+`kubestrata contexts` reads the kubeconfig without touching any cluster and flags, in a `NOTES`
+column (`insecure_skip_tls_verify` and `static_token` in JSON), the contexts whose credential is
+exposed: a cluster with `insecure-skip-tls-verify: true` (anyone on the network path can pose as the
+API server and receive your token) and a user with a static bearer token (`token` or
+`tokenFile`) instead of an exec plugin or a client certificate. The token itself is never read
+into the output.
+
+To verify the API server instead of skipping the check, get the CA bundle that signs its
+certificate from the cluster administrator (on OpenShift, the CA of the API server's serving
+certificate), check its fingerprint out of band, then point the cluster at it and turn the check
+back on:
+
+```sh
+kubectl config set-cluster <cluster> --certificate-authority=ca.crt --embed-certs \
+  --insecure-skip-tls-verify=false
+oc login --certificate-authority=ca.crt https://api.<cluster>.<base-domain>:6443   # or log in again with it
+```
+
+Prefer an exec plugin or a short-lived ServiceAccount token (see Permissions) to a long-lived
+personal token. A token from `oc login` is an OAuth access token: run `oc logout` when the
+inventory is done, which deletes it on the server and removes it from the kubeconfig.
+
 ## Screenshots
 
 Radial view of `kuberito-source`:

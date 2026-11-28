@@ -76,6 +76,10 @@ which `30d` keeps apart, so `30d` stays the default.
 - Kubeconfig: client-go default loading rules (`KUBECONFIG` with several files, `--kubeconfig`);
   exec plugins work unchanged. An auth failure in one context is a structured error and does not
   stop the others.
+- `contexts` flags hygiene problems without reading any secret: `insecure_skip_tls_verify` (the
+  cluster entry skips certificate checks) and `static_token` (the user holds a `token` or
+  `tokenFile`), plus `auth` (`exec`, `token`, `token-file`, `client-certificate`, `auth-provider`,
+  `basic`).
 - Cluster identity: `sha256(server URL + kube-system namespace UID)[:12]`. Context names are not
   identities.
 - Discovery (`ServerPreferredResources`): served kinds, CRDs and OpenShift types without a

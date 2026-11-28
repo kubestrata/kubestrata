@@ -173,6 +173,28 @@ O `render -c source` e o `compare` leem o cache depois, sem kubeconfig nenhum. S
 aponta para um arquivo de CA (`certificate-authority`) em vez de embuti-la, passe esse arquivo no
 `--certificate-authority`.
 
+### Higiene do kubeconfig
+
+O `kubestrata contexts` lê o kubeconfig sem tocar em cluster nenhum e marca, numa coluna `NOTES`
+(`insecure_skip_tls_verify` e `static_token` no JSON), os contextos cuja credencial fica exposta: um
+cluster com `insecure-skip-tls-verify: true` (qualquer um no caminho de rede pode se passar pelo API
+server e receber o seu token) e um usuário com token bearer estático (`token` ou `tokenFile`) em vez
+de um plugin exec ou de um certificado de cliente. O token em si nunca entra na saída.
+
+Para verificar o API server em vez de pular a checagem, peça ao administrador do cluster o bundle
+de CA que assina o certificado dele (no OpenShift, a CA do certificado de serviço do API server),
+confira a impressão digital por outro canal e então aponte o cluster para ela e religue a checagem:
+
+```sh
+kubectl config set-cluster <cluster> --certificate-authority=ca.crt --embed-certs \
+  --insecure-skip-tls-verify=false
+oc login --certificate-authority=ca.crt https://api.<cluster>.<dominio-base>:6443   # ou entre de novo com ela
+```
+
+Prefira um plugin exec ou um token de ServiceAccount de vida curta (ver Permissões) a um token
+pessoal de vida longa. O token de um `oc login` é um access token OAuth: rode `oc logout` quando o
+inventário terminar, o que apaga o token no servidor e o remove do kubeconfig.
+
 ## Telas
 
 Visão radial do `kuberito-source`:

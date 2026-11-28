@@ -83,6 +83,11 @@ All notable changes to this project are documented here. Versions follow
   zone, managers with their migration path, the biggest namespaces, end-of-life kinds, objects
   without an expected owner, team coverage, Argo CD, errors and skipped kinds. Respects `--redact`.
   Snapshots count nodes per zone (`cluster.nodes.zone_counts`).
+- `kubestrata contexts` flags kubeconfig hygiene problems: clusters with
+  `insecure-skip-tls-verify: true` and users with a static token, in a `NOTES` column and as
+  `insecure_skip_tls_verify`, `static_token` and `auth` in JSON (the token is never printed).
+  README "Kubeconfig hygiene" shows how to trust the cluster CA instead and to log out with
+  `oc logout`.
 - CI: `lab.yml` runs the end-to-end tests on a kuberito lab (`kuberito up --profile full`,
   `make lab-test`, `make page-check`) on pull requests, pushes to `main`, weekly and on demand,
   with kuberito installed from its release (version pinned, checksum and cosign signature

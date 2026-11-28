@@ -78,6 +78,10 @@ nos primeiros anéis, que o `30d` mantém separadas, então o `30d` continua o p
 - Kubeconfig: regras padrão do client-go (`KUBECONFIG` com vários arquivos, `--kubeconfig`); exec
   plugins funcionam sem mudança. Falha de auth num contexto vira erro estruturado e não para os
   outros.
+- O `contexts` marca problemas de higiene sem ler segredo nenhum: `insecure_skip_tls_verify` (a
+  entrada do cluster pula a checagem do certificado) e `static_token` (o usuário tem um `token` ou
+  `tokenFile`), além de `auth` (`exec`, `token`, `token-file`, `client-certificate`,
+  `auth-provider`, `basic`).
 - Identidade do cluster: `sha256(URL do servidor + UID do namespace kube-system)[:12]`. Nome de
   contexto não é identidade.
 - Discovery (`ServerPreferredResources`): kinds servidos, CRDs e tipos do OpenShift sem lista fixa

@@ -12,6 +12,9 @@ kubestrata reads clusters with `list` and `get` only and writes nothing to them.
 | Local files | cache and site under the user cache dir with modes `0700` / `0600`; never sent anywhere; no telemetry |
 | HTML page | offline, Content-Security-Policy without network access; cluster strings rendered as text only |
 
+`kubestrata contexts` flags contexts that skip TLS verification or hold a static token (README,
+"Kubeconfig hygiene"): fix those before collecting, and log out (`oc logout`) when done.
+
 The cache and the generated site describe your cluster (namespaces, images, hosts). Treat them as
 you treat the cluster's inventory: do not commit or publish them.
 

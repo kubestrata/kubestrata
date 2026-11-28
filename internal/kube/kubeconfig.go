@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
 // Context is one kubeconfig context as kubestrata shows it. It never carries credentials:
@@ -18,7 +19,35 @@ type Context struct {
 	User      string `json:"user"`
 	Namespace string `json:"namespace,omitempty"`
 	AuthExec  string `json:"auth_exec,omitempty"`
-	Current   bool   `json:"current"`
+	// Auth is how the user authenticates: exec, token, token-file, client-certificate,
+	// auth-provider or basic; empty when the user has none of them or is missing.
+	Auth string `json:"auth,omitempty"`
+	// InsecureSkipTLSVerify: the cluster's certificate is not checked (insecure-skip-tls-verify),
+	// so anyone on the path can pose as the API server and receive the credential.
+	InsecureSkipTLSVerify bool `json:"insecure_skip_tls_verify,omitempty"`
+	// StaticToken: the user holds a bearer token (token or token-file) instead of an exec plugin
+	// or a client certificate. The token itself is never read into this struct.
+	StaticToken bool `json:"static_token,omitempty"`
+	Current     bool `json:"current"`
+}
+
+// authOf names how a kubeconfig user authenticates, strongest hint first.
+func authOf(u *clientcmdapi.AuthInfo) string {
+	switch {
+	case u.Exec != nil:
+		return "exec"
+	case u.AuthProvider != nil:
+		return "auth-provider"
+	case u.ClientCertificate != "" || len(u.ClientCertificateData) > 0:
+		return "client-certificate"
+	case u.Token != "":
+		return "token"
+	case u.TokenFile != "":
+		return "token-file"
+	case u.Username != "" || u.Password != "":
+		return "basic"
+	}
+	return ""
 }
 
 // LoadingRules returns client-go's default loading rules (KUBECONFIG with several files, then
@@ -45,9 +74,14 @@ func LoadContexts(explicitPath string) ([]Context, string, error) {
 			Current: name == cfg.CurrentContext}
 		if cl, ok := cfg.Clusters[c.Cluster]; ok {
 			ctx.Server = cl.Server
+			ctx.InsecureSkipTLSVerify = cl.InsecureSkipTLSVerify
 		}
-		if u, ok := cfg.AuthInfos[c.AuthInfo]; ok && u.Exec != nil {
-			ctx.AuthExec = filepath.Base(u.Exec.Command)
+		if u, ok := cfg.AuthInfos[c.AuthInfo]; ok {
+			if u.Exec != nil {
+				ctx.AuthExec = filepath.Base(u.Exec.Command)
+			}
+			ctx.Auth = authOf(u)
+			ctx.StaticToken = ctx.Auth == "token" || ctx.Auth == "token-file"
 		}
 		out = append(out, ctx)
 	}

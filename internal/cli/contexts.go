@@ -2,12 +2,25 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
 
 	"github.com/kubestrata/kubestrata/internal/kube"
 )
+
+// hygiene names what a context does that exposes its credential.
+func hygiene(c kube.Context) string {
+	var notes []string
+	if c.InsecureSkipTLSVerify {
+		notes = append(notes, "TLS not verified")
+	}
+	if c.StaticToken {
+		notes = append(notes, "static token")
+	}
+	return strings.Join(notes, ", ")
+}
 
 type contextsDoc struct {
 	SchemaVersion int            `json:"schema_version"`
@@ -41,15 +54,27 @@ func newContextsCmd(g *globals) *cobra.Command {
 				_, err := fmt.Fprintln(out, "no contexts in kubeconfig")
 				return err
 			}
-			t := newTable("", "CONTEXT", "SERVER", "USER", "AUTH", "NAMESPACE")
+			t := newTable("", "CONTEXT", "SERVER", "USER", "AUTH", "NAMESPACE", "NOTES")
+			flagged := false
 			for _, c := range ctxs {
 				mark := ""
 				if c.Current {
 					mark = "*"
 				}
-				t.Row(mark, c.Name, c.Server, c.User, c.AuthExec, c.Namespace)
+				auth := c.Auth
+				if c.AuthExec != "" {
+					auth = "exec: " + c.AuthExec
+				}
+				notes := hygiene(c)
+				flagged = flagged || notes != ""
+				t.Row(mark, c.Name, c.Server, c.User, auth, c.Namespace, notes)
 			}
-			_, err = lipgloss.Fprintln(out, t.String())
+			lines := t.String()
+			if flagged {
+				lines += "\nnotes: trust the cluster CA instead of skipping TLS verification, and prefer an exec plugin or a " +
+					"short-lived token to a static one (README, \"Kubeconfig hygiene\")"
+			}
+			_, err = lipgloss.Fprintln(out, lines)
 			return err
 		},
 	}
