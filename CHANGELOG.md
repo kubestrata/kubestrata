@@ -63,6 +63,11 @@ All notable changes to this project are documented here. Versions follow
   APIRequestCount, `config.openshift.io`, `operator.openshift.io`, the Machine API and more) get
   `platform: true` (their `cat` stays `crd`) and form the page's `platform` category, hidden by
   default (`show=platform` in the hash).
+- Team inference: `collect --team-from-ns '<regexp>'` names a namespace's team from its name (first
+  group), before the `openshift.io/requester` fallback, which now skips `kube:admin`, `system:*`,
+  `admin` and the users of `--requester-ignore` (a trailing `*` matches a prefix). `collect` prints
+  the team coverage in a `TEAMS` column (`team_coverage` in JSON), and the page shows it in the
+  overview; both leave system namespaces out.
 - CI: `lab.yml` runs the end-to-end tests on a kuberito lab (`kuberito up --profile full`,
   `make lab-test`, `make page-check`) on pull requests, pushes to `main`, weekly and on demand,
   with kuberito installed from its release (version pinned, checksum and cosign signature

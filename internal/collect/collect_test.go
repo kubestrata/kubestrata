@@ -835,3 +835,79 @@ func TestPlatformKindsAndCopiedCSVs(t *testing.T) {
 		t.Error("the number of copies enters the fingerprint")
 	}
 }
+
+// Team inference (K17): labels and annotations first, then the namespace name with
+// --team-from-ns, then openshift.io/requester unless the user is an admin or a system user.
+func TestTeamInference(t *testing.T) {
+	ns := func(name string, labels map[string]string, requester string) unstructured.Unstructured {
+		u := obj("v1", "Namespace", "", name, "kubectl-create", labels, nil)
+		if requester != "" {
+			u.SetAnnotations(map[string]string{TeamFromRequester: requester})
+		}
+		return u
+	}
+	src := smallSource(nil)
+	src.objs[schema.GroupResource{Resource: "namespaces"}] = []unstructured.Unstructured{
+		ns("team-pay-prod", nil, "user-a"),                            // the name wins over the requester
+		ns("team-web-dev", map[string]string{"team": "frontend"}, ""), // the label wins over the name
+		ns("ns-a", nil, "user-b"),
+		ns("ns-b", nil, "kube:admin"),
+		ns("ns-c", nil, "system:serviceaccount:ci:deployer"),
+		ns("ns-d", nil, "admin"),
+		ns("ns-e", nil, "svc-pipeline"),
+		ns("kube-system", nil, ""),
+	}
+	src.apis = append(src.apis, resourceOf["apps/Deployment"])
+	src.objs[schema.GroupResource{Group: "apps", Resource: "deployments"}] = []unstructured.Unstructured{
+		obj("apps/v1", "Deployment", "team-pay-prod", "api", "kubectl-create", nil, nil),
+		obj("apps/v1", "Deployment", "ns-b", "web", "kubectl-create", nil, nil),
+		obj("apps/v1", "Deployment", "kube-system", "x", "kubectl-create", nil, nil),
+	}
+	snap, err := Collect(context.Background(), src, Options{Context: "lab", ToolVersion: "test", Now: fixedNow,
+		TeamFromNS: `^team-([a-z]+)-`, RequesterIgnore: []string{"svc-*"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][2]string{
+		"team-pay-prod": {"pay", TeamFromNamespace},
+		"team-web-dev":  {"frontend", "team"},
+		"ns-a":          {"user-b", TeamFromRequester},
+		"ns-b":          {"", ""},
+		"ns-c":          {"", ""},
+		"ns-d":          {"", ""},
+		"ns-e":          {"", ""},
+	}
+	for _, n := range snap.Namespaces {
+		if w, ok := want[n.Name]; ok && (n.Team != w[0] || n.TeamFrom != w[1]) {
+			t.Errorf("%s: team %q from %q, want %q from %q", n.Name, n.Team, n.TeamFrom, w[0], w[1])
+		}
+	}
+	if got := find(t, snap, "apps/Deployment/team-pay-prod/api").Team; got != "pay" {
+		t.Errorf("resource team = %q, want the namespace's", got)
+	}
+	if got := snap.Scope.RequesterIgnore; len(got) != 4 || got[3] != "svc-*" || snap.Scope.TeamFromNS == "" {
+		t.Errorf("scope: %+v", snap.Scope)
+	}
+	// coverage outside system namespaces: 3 of 7 namespaces, 1 of 2 resources
+	c := snap.TeamCoverage()
+	if c != (snapshot.TeamCoverage{Namespaces: 7, NamespacesWithTeam: 3, Resources: 2, ResourcesWithTeam: 1}) {
+		t.Errorf("team coverage = %+v", c)
+	}
+	for _, bad := range []string{`team-(`, `^team-[a-z]+`} {
+		if _, err := Collect(context.Background(), smallSource(nil), Options{TeamFromNS: bad}); err == nil {
+			t.Errorf("--team-from-ns %q accepted", bad)
+		}
+	}
+}
+
+func TestIgnoredRequester(t *testing.T) {
+	ignore := append(append([]string{}, DefaultRequesterIgnore...), "svc-*")
+	for user, want := range map[string]bool{
+		"kube:admin": true, "system:admin": true, "system:serviceaccount:ns-a:sa": true, "admin": true,
+		"svc-ci": true, "user-a": false, "administrator": false, "kube:admin2": false,
+	} {
+		if got := ignoredRequester(user, ignore); got != want {
+			t.Errorf("%s: ignored %v, want %v", user, got, want)
+		}
+	}
+}

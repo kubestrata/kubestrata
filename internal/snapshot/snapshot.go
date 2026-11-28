@@ -80,6 +80,11 @@ type Scope struct {
 	SkippedKinds []string `json:"skipped_kinds,omitempty"`
 	SystemNS     string   `json:"system_ns"`
 	TeamKeys     []string `json:"team_keys"`
+	// TeamFromNS is the regexp whose first group names a namespace's team from its name
+	// (collect --team-from-ns); RequesterIgnore are the openshift.io/requester users never taken
+	// as a team (built-in ones included).
+	TeamFromNS      string   `json:"team_from_ns,omitempty"`
+	RequesterIgnore []string `json:"requester_ignore,omitempty"`
 }
 
 // Namespace is the sector of the radial view.
@@ -131,6 +136,40 @@ type Error struct {
 	NS      string `json:"ns,omitempty"`
 	Reason  string `json:"reason"`
 	Message string `json:"message,omitempty"`
+}
+
+// TeamCoverage counts what has a team, outside system namespaces: namespaces, and the resources
+// in them (cluster-scoped resources are left out).
+type TeamCoverage struct {
+	Namespaces         int `json:"namespaces"`
+	NamespacesWithTeam int `json:"namespaces_with_team"`
+	Resources          int `json:"resources"`
+	ResourcesWithTeam  int `json:"resources_with_team"`
+}
+
+// TeamCoverage of the snapshot.
+func (s *Snapshot) TeamCoverage() TeamCoverage {
+	var c TeamCoverage
+	system := map[string]bool{}
+	for _, n := range s.Namespaces {
+		system[n.Name] = n.System
+		if !n.System {
+			c.Namespaces++
+			if n.Team != "" {
+				c.NamespacesWithTeam++
+			}
+		}
+	}
+	for _, r := range s.Resources {
+		if r.NS == "" || system[r.NS] {
+			continue
+		}
+		c.Resources++
+		if r.Team != "" {
+			c.ResourcesWithTeam++
+		}
+	}
+	return c
 }
 
 // ClusterScoped is the namespace segment of IDs for cluster-scoped objects.

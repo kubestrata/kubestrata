@@ -28,9 +28,40 @@ type Options struct {
 	CRDs        bool
 	// SkipKinds are kinds not to list: Kind (any group) or group/Kind, core for the core group,
 	// case-insensitive (Secret, core/Secret, route.openshift.io/Route).
-	SkipKinds   []string
-	Concurrency int
-	Now         func() time.Time
+	SkipKinds []string
+	// TeamFromNS is a regexp whose first group names the team of a namespace without a team label
+	// or annotation, from the namespace name (^team-([a-z]+)-). RequesterIgnore are more
+	// openshift.io/requester users to skip, on top of DefaultRequesterIgnore.
+	TeamFromNS      string
+	RequesterIgnore []string
+	Concurrency     int
+	Now             func() time.Time
+}
+
+// TeamNSPattern compiles --team-from-ns: it must have a group for the team name.
+func TeamNSPattern(expr string) (*regexp.Regexp, error) {
+	if expr == "" {
+		return nil, nil
+	}
+	re, err := regexp.Compile(expr)
+	if err != nil {
+		return nil, fmt.Errorf("team-from-ns: %w", err)
+	}
+	if re.NumSubexp() < 1 {
+		return nil, fmt.Errorf("team-from-ns: %q has no group: the first one names the team, e.g. ^team-([a-z]+)-", expr)
+	}
+	return re, nil
+}
+
+// ignoredRequester reports whether a requester names no team: exact names, or a prefix for an
+// entry ending in *.
+func ignoredRequester(user string, ignore []string) bool {
+	for _, i := range ignore {
+		if p, ok := strings.CutSuffix(i, "*"); ok && strings.HasPrefix(user, p) || i == user {
+			return true
+		}
+	}
+	return false
 }
 
 // SkipMatcher reads SkipKinds entries into a match function.
@@ -99,6 +130,11 @@ func Collect(ctx context.Context, src Source, o Options) (*snapshot.Snapshot, er
 	if err != nil {
 		return nil, err
 	}
+	nsTeamRE, err := TeamNSPattern(o.TeamFromNS)
+	if err != nil {
+		return nil, err
+	}
+	ignore := append(append([]string{}, DefaultRequesterIgnore...), o.RequesterIgnore...)
 	version, err := src.ServerVersion(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("server version: %w", err)
@@ -107,7 +143,8 @@ func Collect(ctx context.Context, src Source, o Options) (*snapshot.Snapshot, er
 		SchemaVersion: snapshot.SchemaVersion,
 		Tool:          snapshot.Tool{Name: "kubestrata", Version: o.ToolVersion},
 		CollectedAt:   o.Now().UTC().Truncate(time.Second),
-		Scope:         snapshot.Scope{SystemNS: o.SystemNS, TeamKeys: o.TeamKeys},
+		Scope: snapshot.Scope{SystemNS: o.SystemNS, TeamKeys: o.TeamKeys, TeamFromNS: o.TeamFromNS,
+			RequesterIgnore: ignore},
 	}
 	var mu sync.Mutex
 	addErr := func(kind, ns string, err error) {
@@ -197,7 +234,8 @@ func Collect(ctx context.Context, src Source, o Options) (*snapshot.Snapshot, er
 	}
 	wg.Wait()
 
-	b := &builder{o: o, sysRE: sysRE, byUID: map[string]*item{}, nsTeam: map[string]string{}, skipped: skipped}
+	b := &builder{o: o, sysRE: sysRE, byUID: map[string]*item{}, nsTeam: map[string]string{}, skipped: skipped,
+		nsTeamRE: nsTeamRE, requesterIgnore: ignore}
 	for _, l := range todo {
 		if l.spec.Mode == modeNamespaces {
 			b.namespaces(snap, l.objs)
@@ -241,12 +279,25 @@ type builder struct {
 	nsTeam   map[string]string
 	nodeArch map[string]string
 	skipped  map[string]bool // group/Kind left out by SkipKinds: references to them are not missing
+	// team inference beyond labels and annotations
+	nsTeamRE        *regexp.Regexp
+	requesterIgnore []string
 }
 
+// namespaces reads the sectors. A namespace's team comes from its labels, then its annotations
+// (TeamKeys, in order), then the namespace name (TeamFromNS), then openshift.io/requester unless
+// that user is ignored (an admin or a system user names no team).
 func (b *builder) namespaces(snap *snapshot.Snapshot, objs []unstructured.Unstructured) {
-	keys := append(append([]string{}, b.o.TeamKeys...), TeamFromRequester)
 	for _, u := range objs {
-		team, from := teamFrom(keys, u.GetLabels(), u.GetAnnotations())
+		team, from := teamFrom(b.o.TeamKeys, u.GetLabels(), u.GetAnnotations())
+		if team == "" && b.nsTeamRE != nil {
+			if m := b.nsTeamRE.FindStringSubmatch(u.GetName()); len(m) > 1 && m[1] != "" {
+				team, from = m[1], TeamFromNamespace
+			}
+		}
+		if req := u.GetAnnotations()[TeamFromRequester]; team == "" && req != "" && !ignoredRequester(req, b.requesterIgnore) {
+			team, from = req, TeamFromRequester
+		}
 		b.nsTeam[u.GetName()] = team
 		snap.Namespaces = append(snap.Namespaces, snapshot.Namespace{
 			Name: u.GetName(), Team: team, TeamFrom: from, System: b.sysRE.MatchString(u.GetName()),

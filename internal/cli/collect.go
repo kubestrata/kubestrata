@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -38,7 +39,9 @@ type collectResult struct {
 	Path      string    `json:"path,omitempty"`
 	// SnapshotOut is the plain JSON copy written by --snapshot-out.
 	SnapshotOut string `json:"snapshot_out,omitempty"`
-	Message     string `json:"message,omitempty"`
+	// TeamCoverage counts the namespaces and resources with a team, outside system namespaces.
+	TeamCoverage *snapshot.TeamCoverage `json:"team_coverage,omitempty"`
+	Message      string                 `json:"message,omitempty"`
 }
 
 type collectDoc struct {
@@ -57,6 +60,8 @@ type collectFlags struct {
 	snapshotOut string
 	skipKinds   []string
 	noSecrets   bool
+	teamFromNS  string
+	reqIgnore   []string
 }
 
 func newCollectCmd(g *globals) *cobra.Command {
@@ -80,6 +85,9 @@ func newCollectCmd(g *globals) *cobra.Command {
 				f.skipKinds = append(f.skipKinds, "core/Secret")
 			}
 			if _, err := collect.SkipMatcher(f.skipKinds); err != nil {
+				return err
+			}
+			if _, err := collect.TeamNSPattern(f.teamFromNS); err != nil {
 				return err
 			}
 			targets, err := g.resolveContexts(f.contexts, f.all)
@@ -155,6 +163,11 @@ func newCollectCmd(g *globals) *cobra.Command {
 	cmd.Flags().StringSliceVar(&f.skipKinds, "skip-kinds", nil,
 		"kinds not to list, as Kind or group/Kind with core for the core group (e.g. core/Secret,route.openshift.io/Route); "+
 			"recorded in the snapshot scope")
+	cmd.Flags().StringVar(&f.teamFromNS, "team-from-ns", "",
+		"regexp whose first group names the team of a namespace without a team label or annotation, from its name "+
+			"(e.g. '^team-([a-z]+)-'); tried before openshift.io/requester")
+	cmd.Flags().StringSliceVar(&f.reqIgnore, "requester-ignore", nil,
+		"openshift.io/requester users that name no team, on top of kube:admin, system:* and admin (a trailing * matches a prefix)")
 	cmd.Flags().BoolVar(&f.noSecrets, "no-secrets", false,
 		"do not list Secrets (same as --skip-kinds core/Secret), for a role without list on secrets: Helm release "+
 			"state and links to Secrets are lost")
@@ -222,6 +235,10 @@ func collectOne(ctx context.Context, g *globals, c *cache.Cache, f *collectFlags
 		if e, ok, err := c.Latest(name); err == nil && ok && time.Since(e.CollectedAt) < f.maxAge {
 			r.Status, r.ClusterID, r.Distro, r.Version = "fresh", e.ClusterID, e.Distro, e.Version
 			r.Resources, r.Errors, r.Collected, r.Path = e.Resources, e.Errors, e.CollectedAt, e.Path
+			if s, err := c.Load(e); err == nil {
+				tc := s.TeamCoverage()
+				r.TeamCoverage = &tc
+			}
 			return r
 		}
 	}
@@ -234,7 +251,8 @@ func collectOne(ctx context.Context, g *globals, c *cache.Cache, f *collectFlags
 		return fail(err)
 	}
 	snap, err := collect.Collect(ctx, src, collect.Options{Context: name, ToolVersion: g.version,
-		SystemNS: f.systemNS, TeamKeys: f.teamKeys, CRDs: f.crds, SkipKinds: f.skipKinds})
+		SystemNS: f.systemNS, TeamKeys: f.teamKeys, CRDs: f.crds, SkipKinds: f.skipKinds,
+		TeamFromNS: f.teamFromNS, RequesterIgnore: f.reqIgnore})
 	if err != nil {
 		return fail(err)
 	}
@@ -244,6 +262,8 @@ func collectOne(ctx context.Context, g *globals, c *cache.Cache, f *collectFlags
 	}
 	r.Status, r.ClusterID, r.Distro, r.Version = "collected", snap.Cluster.ID, snap.Cluster.Distro, snap.Cluster.Version
 	r.Resources, r.Errors, r.Collected, r.Path = len(snap.Resources), len(snap.Errors), snap.CollectedAt, e.Path
+	tc := snap.TeamCoverage()
+	r.TeamCoverage = &tc
 	r.Seconds = time.Since(start).Seconds()
 	return r
 }
@@ -258,7 +278,7 @@ func printCollect(cmd *cobra.Command, g *globals, results []collectResult) error
 	if g.format == "json" {
 		return writeJSON(out, collectDoc{SchemaVersion: SchemaVersion, Results: shown})
 	}
-	t := newTable("CONTEXT", "STATUS", "CLUSTER", "DISTRO", "VERSION", "RESOURCES", "ERRORS", "TIME")
+	t := newTable("CONTEXT", "STATUS", "CLUSTER", "DISTRO", "VERSION", "RESOURCES", "ERRORS", "TEAMS", "TIME")
 	var written []string
 	for _, r := range shown {
 		status := r.Status
@@ -266,13 +286,26 @@ func printCollect(cmd *cobra.Command, g *globals, results []collectResult) error
 			status += ": " + truncate(r.Message, 60)
 		}
 		t.Row(r.Context, status, r.ClusterID, r.Distro, r.Version, fmt.Sprint(r.Resources), fmt.Sprint(r.Errors),
-			fmt.Sprintf("%.1fs", r.Seconds))
+			teamCoverageText(r.TeamCoverage), fmt.Sprintf("%.1fs", r.Seconds))
 		if r.SnapshotOut != "" {
 			written = append(written, "snapshot of "+r.Context+": "+r.SnapshotOut)
 		}
 	}
 	_, err := lipgloss.Fprintln(out, strings.Join(append([]string{t.String()}, written...), "\n"))
 	return err
+}
+
+// teamCoverageText reads "4/6 ns, 81% res": namespaces with a team, and the share of their
+// resources with one, outside system namespaces.
+func teamCoverageText(c *snapshot.TeamCoverage) string {
+	if c == nil {
+		return ""
+	}
+	res := "—"
+	if c.Resources > 0 {
+		res = fmt.Sprintf("%.0f%%", math.Round(float64(c.ResourcesWithTeam)*100/float64(c.Resources)))
+	}
+	return fmt.Sprintf("%d/%d ns, %s res", c.NamespacesWithTeam, c.Namespaces, res)
 }
 
 func newTable(headers ...string) *table.Table {

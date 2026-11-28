@@ -106,3 +106,10 @@ var DefaultTeamKeys = []string{"team", "owner", "app.kubernetes.io/part-of"}
 // TeamFromRequester is the namespace annotation OpenShift sets to the user who requested the
 // project. A team taken from it is a user name: --redact masks it.
 const TeamFromRequester = "openshift.io/requester"
+
+// TeamFromNamespace is the team_from of a team taken from the namespace name (--team-from-ns).
+const TeamFromNamespace = "namespace-name"
+
+// DefaultRequesterIgnore are requesters that name no team: the OpenShift bootstrap admin, the
+// system users and service accounts, and a plain admin. A trailing * matches a prefix.
+var DefaultRequesterIgnore = []string{"kube:admin", "system:*", "admin"}

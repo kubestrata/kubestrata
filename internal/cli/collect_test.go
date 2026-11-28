@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A bad --skip-kinds entry stops collect before any cluster is contacted.
@@ -16,5 +18,31 @@ func TestCollectSkipKindsValidated(t *testing.T) {
 		if _, err := run(t, a...); err == nil || !strings.Contains(err.Error(), "skip kinds") {
 			t.Errorf("%v: %v", args, err)
 		}
+	}
+}
+
+// collect reports the team coverage of each snapshot, outside system namespaces (K17).
+func TestCollectTeamCoverage(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now().UTC().Truncate(time.Second)
+	team := deployment("spark", "api", "api:1", now)
+	team.Team = "team-data"
+	putSnap(t, dir, "aaaaaaaaaaaa", "source", now, team, deployment("spark", "worker", "worker:1", now),
+		configMap("kube-system", "x", "sha256:x", now))
+	kc := kubeconfig(t, "https://127.0.0.1:1", "source")
+	out, err := run(t, "collect", "--cache-dir", dir, "--kubeconfig", kc, "-c", "source", "--format", "json")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	var doc collectDoc
+	if err := json.Unmarshal([]byte(out), &doc); err != nil || len(doc.Results) != 1 || doc.Results[0].TeamCoverage == nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	if c := *doc.Results[0].TeamCoverage; c.Namespaces != 1 || c.NamespacesWithTeam != 1 || c.Resources != 2 || c.ResourcesWithTeam != 1 {
+		t.Errorf("team coverage = %+v", c)
+	}
+	text, err := run(t, "collect", "--cache-dir", dir, "--kubeconfig", kc, "-c", "source")
+	if err != nil || !strings.Contains(text, "TEAMS") || !strings.Contains(text, "1/1 ns, 50% res") {
+		t.Errorf("text: %v\n%s", err, text)
 	}
 }

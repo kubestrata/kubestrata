@@ -138,6 +138,21 @@
     return days >= 365 && days % 365 === 0 ? (days / 365) + "y" : days + "d";
   }
   function pct(c) { return c === null || c === undefined ? "—" : Math.round(c * 100) + "%"; }
+  // namespaces and resources with a team, outside system namespaces (the CLI counts the same)
+  function teamCoverage(s) {
+    var sys = {}, ns = 0, nsT = 0, res = 0, resT = 0;
+    (s.namespaces || []).forEach(function (n) {
+      sys[n.name] = !!n.system;
+      if (!n.system) { ns++; if (n.team) nsT++; }
+    });
+    (s.resources || []).forEach(function (r) {
+      if (!r.ns || sys[r.ns]) return;
+      res++;
+      if (r.team) resT++;
+    });
+    return nsT + " of " + ns + " namespaces, " + resT + " of " + res + " resources" +
+      (res ? " (" + Math.round(resT * 100 / res) + "%)" : "");
+  }
   // cluster.argocd: what Argo CD manages; managed 0 means installed, nothing attributed
   function argoText(a) {
     var apps = a.applications + " Application" + (a.applications === 1 ? "" : "s") +
@@ -641,6 +656,7 @@
       if (c.argocd) row(t, "argo cd", argoText(c.argocd), c.argocd.managed ? null : "eol");
       row(t, "resources", s.resources.length);
       row(t, "edges", (s.edges || []).length);
+      row(t, "team coverage", teamCoverage(s) + ", system namespaces excluded");
       if (skippedOf(s).length) row(t, "skipped kinds", skippedOf(s).join(", ") + " (collect --skip-kinds, --no-secrets)", "eol");
       box.appendChild(t);
       box.appendChild(el("h3", null, "managers"));
@@ -738,6 +754,7 @@
       });
       if (ca.argocd || cb.argocd) row3(t, "argo cd", ca.argocd && argoText(ca.argocd), cb.argocd && argoText(cb.argocd));
       row3(t, "resources", sa.resources.length, sb.resources.length);
+      row3(t, "team coverage", teamCoverage(sa), teamCoverage(sb));
       if (skippedOf(sa).length || skippedOf(sb).length) {
         row3(t, "skipped kinds", skippedOf(sa).join(", ") || "—", skippedOf(sb).join(", ") || "—", "eol");
       }

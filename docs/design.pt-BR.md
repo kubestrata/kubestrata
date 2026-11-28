@@ -95,6 +95,16 @@ nos primeiros anéis, que o `30d` mantém separadas, então o `30d` continua o p
   `kubestrata-reader-no-secrets` (os kinds do inventário e grupos comuns de custom resources, sem
   Secrets), para o `collect --no-secrets`. Nenhum dos dois concede `get` em outros objetos, então
   nenhum subresource (`pods/exec`, `nodes/proxy`) fica ao alcance.
+- Times: o `team` de um recurso vem dos labels dele (`--team-label`, padrão `team`, `owner`,
+  `app.kubernetes.io/part-of`), senão do namespace. O time de um namespace vem das mesmas chaves nos
+  labels, depois nas annotations; depois do nome, com `--team-from-ns <regexp>`, cujo primeiro grupo
+  é o time (`'^team-([a-z]+)-'` lê `pay` de `team-pay-prod`); depois da annotation do OpenShift
+  `openshift.io/requester`, a não ser que o requester seja `kube:admin`, `system:*`, `admin` ou um
+  usuário do `--requester-ignore` (um `*` no fim casa com prefixo): um administrador que criou o
+  projeto não nomeia time. O `namespaces[].team_from` registra a chave, `namespace-name` ou
+  `openshift.io/requester`. O `collect` imprime a cobertura de times (namespaces com time e a fatia
+  dos recursos deles com time, fora dos namespaces de sistema; `team_coverage` no JSON) e a página
+  mostra essa cobertura na visão geral.
 - `--skip-kinds Kind,grupo/Kind` (`core` para o grupo core, sem diferenciar maiúsculas) deixa kinds
   de fora; `--no-secrets` é o `--skip-kinds core/Secret`. Os kinds pulados vão para
   `scope.skipped_kinds`, e uma referência a um kind pulado não entra em `missing_refs`. Sem Secrets

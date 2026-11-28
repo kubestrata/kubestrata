@@ -92,6 +92,16 @@ which `30d` keeps apart, so `30d` stays the default.
   and `kubestrata-reader-no-secrets` (the inventory kinds and common custom resource groups, no
   Secrets), for `collect --no-secrets`. Neither grants `get` on other objects, so no subresource
   (`pods/exec`, `nodes/proxy`) is reachable.
+- Teams: a resource's `team` comes from its labels (`--team-label`, default `team`, `owner`,
+  `app.kubernetes.io/part-of`), else from its namespace. A namespace's team comes from the same
+  keys in its labels, then its annotations; then from its name with `--team-from-ns <regexp>`,
+  whose first group is the team (`'^team-([a-z]+)-'` reads `pay` from `team-pay-prod`); then from
+  the OpenShift annotation `openshift.io/requester`, unless the requester is `kube:admin`,
+  `system:*`, `admin` or a user of `--requester-ignore` (a trailing `*` matches a prefix): an
+  administrator who created the project names no team. `namespaces[].team_from` records the key,
+  `namespace-name` or `openshift.io/requester`. `collect` prints the team coverage (namespaces with
+  a team, and the share of their resources with one, outside system namespaces; `team_coverage` in
+  JSON) and the page shows it in the overview.
 - `--skip-kinds Kind,group/Kind` (`core` for the core group, case-insensitive) leaves kinds out;
   `--no-secrets` is `--skip-kinds core/Secret`. Skipped kinds go to `scope.skipped_kinds`, and a
   reference to a skipped kind is not a `missing_refs` entry. Without Secrets the Helm release state
