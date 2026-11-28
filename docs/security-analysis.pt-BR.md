@@ -30,11 +30,20 @@ do [`go.mod`](../go.mod) (o workflow de release lê essa linha). Um advisory nov
 ## Cadeia de suprimentos
 
 - Toda action está fixada pelo SHA do commit. Os workflows têm `contents: read` por padrão; só o
-  job de release (`contents: write`, `id-token: write`) e o job que dispara o smoke de instalação
-  (`actions: write`) recebem mais.
+  job de release (`contents: write`, `id-token: write`, `attestations: write`), o job do PyPI
+  (`id-token: write`) e o job que dispara o smoke de instalação (`actions: write`) recebem mais.
 - Os archives da release saem com `CGO_ENABLED=0`, `-trimpath` e metadados fixos no tar. O
   `checksums.txt` é assinado com cosign keyless (Sigstore, OIDC do GitHub); o README mostra como
   verificar um archive.
+- As releases depois da 0.1.4 trazem attestations de artefato do GitHub
+  (`actions/attest-build-provenance`, `actions/attest-sbom`): build provenance SLSA para todo
+  archive do `checksums.txt` e um SBOM CycloneDX por archive (`cyclonedx-gomod` v1.12.0: os módulos
+  e a biblioteca padrão daquele build GOOS/GOARCH), anexado à release e com attestation. O
+  `gh attestation verify <archive> -R kubestrata/kubestrata` confere a provenance sem cosign;
+  acrescente `--predicate-type https://cyclonedx.org/bom` para o SBOM.
+- Os wheels do PyPI são publicados por Trusted Publishing com attestations PEP 740:
+  `uvx pypi-attestations verify pypi --repository https://github.com/kubestrata/kubestrata
+  pypi:<nome do wheel>` confere um deles.
 - A fórmula do Homebrew fixa cada archive pelo `sha256`. O workflow de release atualiza o
   [kubestrata/homebrew-tap](https://github.com/kubestrata/homebrew-tap) com uma deploy key que só
   escreve nesse repositório.

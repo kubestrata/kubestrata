@@ -66,6 +66,26 @@ tar -xzf "kubestrata_${v}_${os}_${arch}.tar.gz" kubestrata
 No Linux, `sha256sum -c -` faz o mesmo que `shasum -a 256 -c -`. Para compilar a partir de um
 clone, o `make build` grava `bin/kubestrata`.
 
+As releases depois da 0.1.4 também trazem attestations de artefato do GitHub: build provenance SLSA
+para todo pacote e um SBOM CycloneDX por pacote (`kubestrata_${v}_${os}_${arch}.cdx.json`, anexado à
+release e com attestation). Para verificar sem cosign, com o [GitHub CLI](https://cli.github.com):
+
+```sh
+gh attestation verify "kubestrata_${v}_${os}_${arch}.tar.gz" -R kubestrata/kubestrata
+gh attestation verify "kubestrata_${v}_${os}_${arch}.tar.gz" -R kubestrata/kubestrata \
+  --predicate-type https://cyclonedx.org/bom          # a attestation do SBOM
+```
+
+Os wheels do PyPI têm attestations [PEP 740](https://peps.python.org/pep-0740/) do Trusted
+Publishing: o PyPI mostra essas attestations em **Provenance** na página de cada arquivo, e o
+[`pypi-attestations`](https://github.com/pypi/pypi-attestations) confere uma contra este
+repositório:
+
+```sh
+uvx pypi-attestations verify pypi --repository https://github.com/kubestrata/kubestrata \
+  "pypi:kubestrata-${v}-py3-none-macosx_12_0_arm64.whl"
+```
+
 ### Plataformas testadas
 
 | Plataforma | Runner do GitHub | Smoke de instalação (`install-smoke.yml`) |

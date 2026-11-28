@@ -72,6 +72,12 @@ All notable changes to this project are documented here. Versions follow
   collected like the others but hidden by default in the page and left out of the compare and diff
   totals. `render`/`compare --show-system` start the page with them shown (`system=0` in the hash
   hides them again).
+- Releases carry a CycloneDX SBOM per archive (`kubestrata_<version>_<os>_<arch>.cdx.json`,
+  `cyclonedx-gomod` v1.12.0) and GitHub artifact attestations: SLSA build provenance for every
+  archive and an SBOM attestation for each (`actions/attest-build-provenance`,
+  `actions/attest-sbom`, pinned by commit). `gh attestation verify <archive> -R
+  kubestrata/kubestrata` verifies an archive without cosign; README and the security analysis show
+  how, and how to check the PEP 740 attestation of a PyPI wheel.
 - CI: `lab.yml` runs the end-to-end tests on a kuberito lab (`kuberito up --profile full`,
   `make lab-test`, `make page-check`) on pull requests, pushes to `main`, weekly and on demand,
   with kuberito installed from its release (version pinned, checksum and cosign signature

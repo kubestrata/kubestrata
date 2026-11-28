@@ -13,7 +13,8 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: write # create the GitHub release
-      id-token: write # cosign keyless signature (Sigstore, GitHub OIDC)
+      id-token: write # cosign keyless signature and artifact attestations (Sigstore, GitHub OIDC)
+      attestations: write # store the build provenance and SBOM attestations
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -31,13 +32,15 @@ jobs:
       - name: test
         run: go test -race -count=1 ./...
 
-      - name: build
+      - id: build
+        name: build
         env:
           TAG: ${{ github.ref_name }}
         run: |
           set -eu
           case "$TAG" in v[0-9]*) ;; *) echo "unexpected tag $TAG"; exit 1 ;; esac
           version="${TAG#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           mtime="$(git log -1 --format=%cI)"
           mkdir -p dist
           for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64; do
@@ -51,6 +54,23 @@ jobs:
           done
           (cd dist && sha256sum kubestrata_*.tar.gz > checksums.txt && cat checksums.txt)
 
+      # One CycloneDX SBOM per archive: the modules and the Go standard library linked into that
+      # GOOS/GOARCH build. The tool is installed for the runner, then pointed at each target.
+      - name: SBOMs (CycloneDX, cyclonedx-gomod)
+        env:
+          VERSION: ${{ steps.build.outputs.version }}
+        run: |
+          set -eu
+          GOBIN="$RUNNER_TEMP/bin" go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.12.0
+          for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64; do
+            os="${target%/*}"; arch="${target#*/}"
+            sbom="dist/kubestrata_${VERSION}_${os}_${arch}.cdx.json"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" "$RUNNER_TEMP/bin/cyclonedx-gomod" app \
+              -json -licenses -std -main cmd/kubestrata -output "$sbom" .
+            got="$(jq -r '.metadata.component.version' "$sbom")"
+            [ "$got" = "v${VERSION}" ] || { echo "SBOM $sbom names version $got, want v${VERSION}"; exit 1; }
+          done
+
       - name: smoke (linux/amd64 archive)
         env:
           TAG: ${{ github.ref_name }}
@@ -63,6 +83,38 @@ jobs:
 
       - name: sign checksums (cosign keyless)
         run: cosign sign-blob --yes --bundle dist/checksums.txt.sigstore.json dist/checksums.txt
+
+      # GitHub artifact attestations, checked with `gh attestation verify <archive> -R
+      # kubestrata/kubestrata`: SLSA build provenance for every archive of checksums.txt, and each
+      # archive's SBOM.
+      - name: attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: dist/checksums.txt
+
+      - name: attest SBOM (darwin/arm64)
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: dist/kubestrata_${{ steps.build.outputs.version }}_darwin_arm64.tar.gz
+          sbom-path: dist/kubestrata_${{ steps.build.outputs.version }}_darwin_arm64.cdx.json
+
+      - name: attest SBOM (darwin/amd64)
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: dist/kubestrata_${{ steps.build.outputs.version }}_darwin_amd64.tar.gz
+          sbom-path: dist/kubestrata_${{ steps.build.outputs.version }}_darwin_amd64.cdx.json
+
+      - name: attest SBOM (linux/arm64)
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: dist/kubestrata_${{ steps.build.outputs.version }}_linux_arm64.tar.gz
+          sbom-path: dist/kubestrata_${{ steps.build.outputs.version }}_linux_arm64.cdx.json
+
+      - name: attest SBOM (linux/amd64)
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: dist/kubestrata_${{ steps.build.outputs.version }}_linux_amd64.tar.gz
+          sbom-path: dist/kubestrata_${{ steps.build.outputs.version }}_linux_amd64.cdx.json
 
       - name: publish
         env:
@@ -86,6 +138,16 @@ jobs:
             --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt
           sha256sum -c --ignore-missing checksums.txt
           ```
+
+          or, without cosign, with the GitHub CLI (build provenance, then the SBOM attestation):
+
+          ```sh
+          gh attestation verify kubestrata_<version>_<os>_<arch>.tar.gz -R kubestrata/kubestrata
+          gh attestation verify kubestrata_<version>_<os>_<arch>.tar.gz -R kubestrata/kubestrata \
+            --predicate-type https://cyclonedx.org/bom
+          ```
+
+          Each archive has its CycloneDX SBOM: `kubestrata_<version>_<os>_<arch>.cdx.json`.
           EOF
 
       # Pushes Formula/kubestrata.rb to kubestrata/homebrew-tap with a deploy key
