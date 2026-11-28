@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kubestrata/kubestrata/blob/main/schemas/contexts.schema.json",
+  "title": "kubestrata contexts --format json",
+  "description": "Contexts of the kubeconfig, no cluster access.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Version of this document. Consumers refuse a higher value than they support."
+    },
+    "current": {
+      "type": "string",
+      "description": "Current context of the kubeconfig."
+    },
+    "contexts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "cluster": {
+            "type": "string"
+          },
+          "server": {
+            "type": "string"
+          },
+          "user": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "auth_exec": {
+            "type": "string",
+            "description": "Command of the exec plugin (aws, oc, ...), never its arguments."
+          },
+          "auth": {
+            "type": "string",
+            "description": "exec, token, token-file, client-certificate, auth-provider or basic."
+          },
+          "insecure_skip_tls_verify": {
+            "type": "boolean",
+            "description": "The cluster entry skips certificate verification."
+          },
+          "static_token": {
+            "type": "boolean",
+            "description": "The user holds a static bearer token. The token is never printed."
+          },
+          "current": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "cluster",
+          "current",
+          "name",
+          "server",
+          "user"
+        ]
+      }
+    }
+  },
+  "required": [
+    "contexts",
+    "current",
+    "schema_version"
+  ]
+}

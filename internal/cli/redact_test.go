@@ -167,3 +167,109 @@ func TestRedactDiff(t *testing.T) {
 		assertNoLeak(t, "diff "+f, []byte(out))
 	}
 }
+
+// OpenShift: oc login context names, the API host, Route hosts under apps.<cluster>.<base> and
+// teams taken from openshift.io/requester (user names). All values are synthetic.
+const (
+	ocpSource = "ns-a/api-ocp1-example-com:6443/user-a"
+	ocpTarget = "ns-a/api-ocp2-example-com:6443/user-a"
+)
+
+var ocpLeaks = []string{"ocp1.example.com", "ocp1-example-com", "ocp2.example.com", "ocp2-example-com", "requester-b"}
+
+func assertNoOCPLeak(t *testing.T, where string, b []byte) {
+	t.Helper()
+	for _, l := range ocpLeaks {
+		if i := bytes.Index(b, []byte(l)); i >= 0 {
+			t.Errorf("%s holds %q near %q", where, l, b[max(0, i-60):min(len(b), i+30)])
+		}
+	}
+}
+
+func seedOpenShift(t *testing.T) (dir, kc string) {
+	t.Helper()
+	dir = t.TempDir()
+	c, err := cache.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	for i, ctx := range []string{ocpSource, ocpTarget} {
+		domain := []string{"ocp1.example.com", "ocp2.example.com"}[i]
+		route := snapshot.Resource{ID: snapshot.ID("route.openshift.io", "Route", "ns-a", "web"), Group: "route.openshift.io",
+			Version: "v1", Kind: "Route", Cat: "network", NS: "ns-a", Name: "web", Created: now, Manager: "kubectl",
+			Team: "requester-b", Facts: map[string]any{"host": "web-ns-a.apps." + domain}, FP: []string{"sha256:1", "sha256:2"}[i]}
+		s := &snapshot.Snapshot{SchemaVersion: snapshot.SchemaVersion, CollectedAt: now,
+			Cluster: snapshot.Cluster{ID: []string{"cccccccccccc", "dddddddddddd"}[i], Context: ctx,
+				ServerHost: "api." + domain + ":6443", Distro: "openshift", Version: "v1.36.0"},
+			Namespaces: []snapshot.Namespace{{Name: "ns-a", Team: "requester-b", TeamFrom: "openshift.io/requester", Created: now},
+				{Name: "ns-b", Team: "team-b", TeamFrom: "team", Created: now}},
+			Resources: []snapshot.Resource{route},
+			Errors: []snapshot.Error{{Kind: "core/Secret", Reason: "Forbidden",
+				Message: `Get "https://api.` + domain + `:6443/api/v1/secrets": forbidden`}}}
+		s.Normalize()
+		if _, err := c.Put(s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir, kubeconfig(t, "https://api.ocp1.example.com:6443", ocpSource, ocpTarget)
+}
+
+func TestRedactOpenShift(t *testing.T) {
+	dir, kc := seedOpenShift(t)
+	g := []string{"--cache-dir", dir, "--kubeconfig", kc, "--redact"}
+	site := t.TempDir()
+	snapOut := filepath.Join(t.TempDir(), "s.json")
+	for _, args := range [][]string{
+		{"contexts"},
+		{"contexts", "--format", "json"},
+		{"collect", "-c", ocpSource, "--format", "json", "--snapshot-out", snapOut},
+		{"cache", "ls"},
+		{"render", "-c", ocpSource, "-o", filepath.Join(site, "render"), "--format", "json"},
+		{"compare", "-c", ocpSource, "-c", ocpTarget, "-o", filepath.Join(site, "compare")},
+		{"compare", "-c", ocpSource, "-c", ocpTarget, "-o", filepath.Join(site, "compare-json"), "--format", "json"},
+	} {
+		out, err := run(t, append(args, g...)...)
+		if err != nil {
+			t.Fatalf("%v: %v\n%s", args, err, out)
+		}
+		if !strings.Contains(out, "redacted") {
+			t.Errorf("%v: no mask in the output:\n%s", args, out)
+		}
+		assertNoOCPLeak(t, strings.Join(args[:1], " ")+" output", []byte(out))
+	}
+	b, _ := os.ReadFile(snapOut)
+	assertNoOCPLeak(t, "--snapshot-out file", b)
+	for _, want := range []string{`"web-ns-a.apps.redacted"`, `"api.redacted:6443"`, `"ns-a/api-redacted:6443/redacted"`,
+		`"team": "redacted-1"`, `"team": "team-b"`} {
+		if !bytes.Contains(b, []byte(want)) {
+			t.Errorf("--snapshot-out misses %s", want)
+		}
+	}
+	err := filepath.Walk(site, func(p string, fi os.FileInfo, err error) error {
+		if err != nil || fi.IsDir() {
+			return err
+		}
+		b, err := os.ReadFile(p)
+		assertNoOCPLeak(t, p, b)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the requester team keeps one mask in both snapshots and in the comparison
+	cmp, _ := os.ReadFile(filepath.Join(site, "compare-json", "json", "compare.json"))
+	if !bytes.Contains(cmp, []byte(`"team": "redacted-1"`)) {
+		t.Errorf("compare.json without the masked team:\n%s", cmp)
+	}
+	// errors quote the oc login context
+	if _, err := run(t, append([]string{"render", "-c", "ns-a/api-ocp1-example-com:6443/user-c", "-o", site}, g...)...); err == nil ||
+		!strings.Contains(err.Error(), "api-redacted:6443") || strings.Contains(err.Error(), "ocp1") {
+		t.Errorf("render of an unknown context: %v", err)
+	}
+	// without --redact nothing is masked
+	out, _ := run(t, "contexts", "--kubeconfig", kc)
+	if !strings.Contains(out, "ocp1-example-com") {
+		t.Errorf("contexts masked without --redact:\n%s", out)
+	}
+}

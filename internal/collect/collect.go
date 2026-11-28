@@ -26,8 +26,69 @@ type Options struct {
 	SystemNS    string
 	TeamKeys    []string
 	CRDs        bool
-	Concurrency int
-	Now         func() time.Time
+	// SkipKinds are kinds not to list: Kind (any group) or group/Kind, core for the core group,
+	// case-insensitive (Secret, core/Secret, route.openshift.io/Route).
+	SkipKinds []string
+	// TeamFromNS is a regexp whose first group names the team of a namespace without a team label
+	// or annotation, from the namespace name (^team-([a-z]+)-). RequesterIgnore are more
+	// openshift.io/requester users to skip, on top of DefaultRequesterIgnore.
+	TeamFromNS      string
+	RequesterIgnore []string
+	Concurrency     int
+	Now             func() time.Time
+}
+
+// TeamNSPattern compiles --team-from-ns: it must have a group for the team name.
+func TeamNSPattern(expr string) (*regexp.Regexp, error) {
+	if expr == "" {
+		return nil, nil
+	}
+	re, err := regexp.Compile(expr)
+	if err != nil {
+		return nil, fmt.Errorf("team-from-ns: %w", err)
+	}
+	if re.NumSubexp() < 1 {
+		return nil, fmt.Errorf("team-from-ns: %q has no group: the first one names the team, e.g. ^team-([a-z]+)-", expr)
+	}
+	return re, nil
+}
+
+// ignoredRequester reports whether a requester names no team: exact names, or a prefix for an
+// entry ending in *.
+func ignoredRequester(user string, ignore []string) bool {
+	for _, i := range ignore {
+		if p, ok := strings.CutSuffix(i, "*"); ok && strings.HasPrefix(user, p) || i == user {
+			return true
+		}
+	}
+	return false
+}
+
+// SkipMatcher reads SkipKinds entries into a match function.
+func SkipMatcher(entries []string) (func(group, kind string) bool, error) {
+	type key struct{ group, kind string }
+	anyGroup := map[string]bool{}
+	exact := map[key]bool{}
+	for _, raw := range entries {
+		e := strings.TrimSpace(raw)
+		parts := strings.Split(e, "/")
+		switch {
+		case e == "" || strings.ContainsAny(e, " \t") || len(parts) > 2 || parts[len(parts)-1] == "":
+			return nil, fmt.Errorf("skip kinds: %q is not Kind or group/Kind (core/Secret, route.openshift.io/Route)", raw)
+		case len(parts) == 1:
+			anyGroup[strings.ToLower(e)] = true
+		default:
+			g := strings.ToLower(parts[0])
+			if g == "core" {
+				g = ""
+			}
+			exact[key{g, strings.ToLower(parts[1])}] = true
+		}
+	}
+	return func(group, kind string) bool {
+		k := strings.ToLower(kind)
+		return anyGroup[k] || exact[key{strings.ToLower(group), k}]
+	}, nil
 }
 
 type listed struct {
@@ -65,6 +126,15 @@ func Collect(ctx context.Context, src Source, o Options) (*snapshot.Snapshot, er
 	if err != nil {
 		return nil, fmt.Errorf("system namespace pattern: %w", err)
 	}
+	skip, err := SkipMatcher(o.SkipKinds)
+	if err != nil {
+		return nil, err
+	}
+	nsTeamRE, err := TeamNSPattern(o.TeamFromNS)
+	if err != nil {
+		return nil, err
+	}
+	ignore := append(append([]string{}, DefaultRequesterIgnore...), o.RequesterIgnore...)
 	version, err := src.ServerVersion(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("server version: %w", err)
@@ -73,7 +143,8 @@ func Collect(ctx context.Context, src Source, o Options) (*snapshot.Snapshot, er
 		SchemaVersion: snapshot.SchemaVersion,
 		Tool:          snapshot.Tool{Name: "kubestrata", Version: o.ToolVersion},
 		CollectedAt:   o.Now().UTC().Truncate(time.Second),
-		Scope:         snapshot.Scope{SystemNS: o.SystemNS, TeamKeys: o.TeamKeys},
+		Scope: snapshot.Scope{SystemNS: o.SystemNS, TeamKeys: o.TeamKeys, TeamFromNS: o.TeamFromNS,
+			RequesterIgnore: ignore},
 	}
 	var mu sync.Mutex
 	addErr := func(kind, ns string, err error) {
@@ -107,9 +178,18 @@ func Collect(ctx context.Context, src Source, o Options) (*snapshot.Snapshot, er
 		return nil, fmt.Errorf("discovery returned no resources")
 	}
 	groups := map[string]bool{}
+	skipped := map[string]bool{}
 	var todo []listed
 	for _, a := range apis {
 		groups[a.Group] = true
+		if skip(a.Group, a.Kind) {
+			gk := snapshot.GroupKind(a.Group, a.Kind)
+			if !skipped[gk] {
+				skipped[gk] = true
+				snap.Scope.SkippedKinds = append(snap.Scope.SkippedKinds, gk)
+			}
+			continue
+		}
 		spec, ok := specFor(a.Group, a.Resource)
 		if !ok {
 			if !a.CRD || !o.CRDs {
@@ -154,7 +234,8 @@ func Collect(ctx context.Context, src Source, o Options) (*snapshot.Snapshot, er
 	}
 	wg.Wait()
 
-	b := &builder{o: o, sysRE: sysRE, byUID: map[string]*item{}, nsTeam: map[string]string{}}
+	b := &builder{o: o, sysRE: sysRE, byUID: map[string]*item{}, nsTeam: map[string]string{}, skipped: skipped,
+		nsTeamRE: nsTeamRE, requesterIgnore: ignore}
 	for _, l := range todo {
 		if l.spec.Mode == modeNamespaces {
 			b.namespaces(snap, l.objs)
@@ -179,6 +260,13 @@ func Collect(ctx context.Context, src Source, o Options) (*snapshot.Snapshot, er
 	}
 	snap.Cluster.Distro, snap.Cluster.DistroSignals = detectDistro(groups, snap.Cluster.ServerHost, version, providerIDs, nodeLabels)
 	snap.Resources, snap.Edges = b.finish()
+	snap.Resources, snap.Edges = collapseCopiedCSVs(snap.Resources, snap.Edges)
+	for _, a := range apis {
+		if a.Group == argoGroup && a.Resource == "applications" {
+			snap.Cluster.ArgoCD = attributeArgoCD(snap.Resources, todo)
+			break
+		}
+	}
 	snap.Normalize()
 	return snap, nil
 }
@@ -190,15 +278,29 @@ type builder struct {
 	byUID    map[string]*item
 	nsTeam   map[string]string
 	nodeArch map[string]string
+	skipped  map[string]bool // group/Kind left out by SkipKinds: references to them are not missing
+	// team inference beyond labels and annotations
+	nsTeamRE        *regexp.Regexp
+	requesterIgnore []string
 }
 
+// namespaces reads the sectors. A namespace's team comes from its labels, then its annotations
+// (TeamKeys, in order), then the namespace name (TeamFromNS), then openshift.io/requester unless
+// that user is ignored (an admin or a system user names no team).
 func (b *builder) namespaces(snap *snapshot.Snapshot, objs []unstructured.Unstructured) {
-	keys := append(append([]string{}, b.o.TeamKeys...), "openshift.io/requester")
 	for _, u := range objs {
-		team := teamOf(keys, u.GetLabels(), u.GetAnnotations())
+		team, from := teamFrom(b.o.TeamKeys, u.GetLabels(), u.GetAnnotations())
+		if team == "" && b.nsTeamRE != nil {
+			if m := b.nsTeamRE.FindStringSubmatch(u.GetName()); len(m) > 1 && m[1] != "" {
+				team, from = m[1], TeamFromNamespace
+			}
+		}
+		if req := u.GetAnnotations()[TeamFromRequester]; team == "" && req != "" && !ignoredRequester(req, b.requesterIgnore) {
+			team, from = req, TeamFromRequester
+		}
 		b.nsTeam[u.GetName()] = team
 		snap.Namespaces = append(snap.Namespaces, snapshot.Namespace{
-			Name: u.GetName(), Team: team, System: b.sysRE.MatchString(u.GetName()),
+			Name: u.GetName(), Team: team, TeamFrom: from, System: b.sysRE.MatchString(u.GetName()),
 			Created: u.GetCreationTimestamp().UTC(),
 		})
 	}
@@ -207,7 +309,7 @@ func (b *builder) namespaces(snap *snapshot.Snapshot, objs []unstructured.Unstru
 func (b *builder) nodes(snap *snapshot.Snapshot, objs []unstructured.Unstructured) ([]string, []string) {
 	b.nodeArch = map[string]string{}
 	ns := snapshot.NodeSummary{Count: len(objs), Arch: map[string]int{}, InstanceTypes: map[string]int{},
-		CapacityTypes: map[string]int{}}
+		CapacityTypes: map[string]int{}, ZoneCounts: map[string]int{}}
 	zones := map[string]bool{}
 	kubelets := map[string]bool{}
 	labelKeys := map[string]bool{}
@@ -221,6 +323,7 @@ func (b *builder) nodes(snap *snapshot.Snapshot, objs []unstructured.Unstructure
 		labels := u.GetLabels()
 		if z := labels[labelZone]; z != "" {
 			zones[z] = true
+			ns.ZoneCounts[z]++
 		}
 		if t := labels[labelInstanceType]; t != "" {
 			ns.InstanceTypes[t]++
@@ -301,6 +404,10 @@ func (b *builder) base(spec kindSpec, api APIResource, ns, name string, created 
 	if len(names) > 0 {
 		facts["field_managers"] = names
 	}
+	if mgr == MgrOther {
+		// the unknown tool by name, for the page's top list of "other"
+		facts["manager_raw"] = creatorManager(mf)
+	}
 	return &item{
 		ownerUID: ownerUID,
 		res: snapshot.Resource{
@@ -318,6 +425,8 @@ func (b *builder) base(spec kindSpec, api APIResource, ns, name string, created 
 			Team:    team,
 			Labels:  labels,
 			Facts:   facts,
+			// custom resources of the cluster platform (OpenShift cluster operators)
+			Platform: spec.Cat == CatCRD && platformGroups[api.Group],
 		},
 	}
 }
@@ -371,6 +480,7 @@ func (b *builder) addSecret(sm *SecretMeta) {
 	switch {
 	case sm.Type == "helm.sh/release.v1" || sm.Labels["owner"] == "helm":
 		it.res.Manager = MgrHelm
+		delete(it.res.Facts, "manager_raw")
 		it.res.Facts["helm_release"] = sm.Labels["name"]
 		it.res.Facts["helm_revision"] = sm.Labels["version"]
 		it.res.Facts["helm_status"] = sm.Labels["status"]
@@ -431,6 +541,20 @@ func (b *builder) finish() ([]snapshot.Resource, []snapshot.Edge) {
 		}
 	}
 	for _, it := range out {
+		if len(it.backends) > 0 {
+			var bs []string
+			for _, b := range it.backends {
+				if svc := byID[snapshot.ID("", "Service", it.res.NS, b.svc)]; svc != nil {
+					b.port = servicePort(svc.ports, b)
+				}
+				if b.port == "" {
+					bs = append(bs, b.svc)
+				} else {
+					bs = append(bs, b.svc+":"+b.port)
+				}
+			}
+			it.res.Facts["backends"] = uniqSorted(bs)
+		}
 		var missing []string
 		for _, r := range it.refs {
 			if r.name == "" {
@@ -439,7 +563,7 @@ func (b *builder) finish() ([]snapshot.Resource, []snapshot.Edge) {
 			id := snapshot.ID(r.group, r.kind, r.ns, r.name)
 			if _, ok := byID[id]; ok && id != it.res.ID {
 				edges = append(edges, snapshot.Edge{From: it.res.ID, To: id, Rel: r.rel})
-			} else if !(r.kind == "ServiceAccount" && r.name == "default") {
+			} else if !(r.kind == "ServiceAccount" && r.name == "default") && !b.skipped[snapshot.GroupKind(r.group, r.kind)] {
 				missing = append(missing, r.kind+"/"+r.name)
 			}
 		}
@@ -475,6 +599,50 @@ func (b *builder) finish() ([]snapshot.Resource, []snapshot.Edge) {
 	}
 	edges = dedupEdges(edges)
 	return res, edges
+}
+
+// collapseCopiedCSVs folds the ClusterServiceVersions that OLM copies into every namespace an
+// operator watches (label olm.copiedFrom: <namespace of the original>) into the original, which
+// counts them in the volatile fact copies. A copy whose original was not collected stays.
+func collapseCopiedCSVs(res []snapshot.Resource, edges []snapshot.Edge) ([]snapshot.Resource, []snapshot.Edge) {
+	const csv = "operators.coreos.com/ClusterServiceVersion"
+	byID := map[string]int{}
+	for i, r := range res {
+		byID[r.ID] = i
+	}
+	dropped := map[string]bool{}
+	for _, r := range res {
+		from := r.Labels["olm.copiedFrom"]
+		if from == "" || from == r.NS || snapshot.GroupKind(r.Group, r.Kind) != csv {
+			continue
+		}
+		i, ok := byID[snapshot.ID(r.Group, r.Kind, from, r.Name)]
+		if !ok {
+			continue
+		}
+		orig := &res[i]
+		if orig.Facts == nil {
+			orig.Facts = map[string]any{}
+		}
+		orig.Facts["copies"] = asInt(orig.Facts["copies"]) + 1
+		dropped[r.ID] = true
+	}
+	if len(dropped) == 0 {
+		return res, edges
+	}
+	out := res[:0]
+	for _, r := range res {
+		if !dropped[r.ID] {
+			out = append(out, r)
+		}
+	}
+	kept := edges[:0]
+	for _, e := range edges {
+		if !dropped[e.From] && !dropped[e.To] {
+			kept = append(kept, e)
+		}
+	}
+	return out, kept
 }
 
 func subset(sel, labels map[string]string) bool {
@@ -550,7 +718,8 @@ var volatile = map[string]bool{
 	"pods": true, "ready": true, "restarts": true, "pod_newest": true, "pod_oldest": true,
 	"last_rollout": true, "last_run": true, "jobs": true, "archs": true, "phase": true, "node": true,
 	"volume": true, "claim": true, "field_managers": true, "missing_refs": true, "selects_none": true,
-	"helm_revision": true, "helm_status": true, "orphan": true, "owner_missing": true,
+	"helm_revision": true, "helm_status": true, "orphan": true, "owner_missing": true, "manager_raw": true,
+	"copies": true,
 }
 
 // Volatile reports whether a fact stays out of the fingerprint. compare uses it to name the

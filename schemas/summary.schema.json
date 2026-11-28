@@ -1,0 +1,318 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kubestrata/kubestrata/blob/main/schemas/summary.schema.json",
+  "title": "kubestrata summary --format json",
+  "description": "Migration summary of one snapshot.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Version of this document. Consumers refuse a higher value than they support."
+    },
+    "cluster": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "context": {
+          "type": "string"
+        },
+        "distro": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "collected_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "tool": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "collected_at",
+        "context",
+        "distro",
+        "id",
+        "version"
+      ]
+    },
+    "resources": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Resources outside system namespaces."
+    },
+    "system_resources": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Resources of system namespaces, left out of the counts."
+    },
+    "categories": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/count"
+      },
+      "description": "By count, largest first; platform for the platform kinds."
+    },
+    "kinds": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/count"
+      },
+      "description": "group/Kind by count."
+    },
+    "nodes": {
+      "$ref": "#/$defs/nodeSummary"
+    },
+    "managers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/count"
+      }
+    },
+    "top_namespaces": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "ns": {
+            "type": "string"
+          },
+          "team": {
+            "type": "string"
+          },
+          "resources": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "ns",
+          "resources"
+        ]
+      }
+    },
+    "end_of_life": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "Id."
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "note",
+          "resources"
+        ]
+      }
+    },
+    "unowned": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "orphan",
+              "owner_missing"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "reason"
+        ]
+      }
+    },
+    "team_coverage": {
+      "$ref": "#/$defs/teamCoverage"
+    },
+    "argocd": {
+      "$ref": "#/$defs/argocd"
+    },
+    "errors": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Collection errors."
+    },
+    "skipped_kinds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "categories",
+    "cluster",
+    "end_of_life",
+    "errors",
+    "kinds",
+    "managers",
+    "nodes",
+    "resources",
+    "schema_version",
+    "system_resources",
+    "team_coverage",
+    "top_namespaces",
+    "unowned"
+  ],
+  "$defs": {
+    "count": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "count",
+        "name"
+      ]
+    },
+    "nodeSummary": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of nodes."
+        },
+        "arch": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "description": "Nodes per CPU architecture."
+        },
+        "instance_types": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "description": "Nodes per instance type (node.kubernetes.io/instance-type)."
+        },
+        "capacity_types": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "description": "Nodes per capacity type (on-demand, spot, ...)."
+        },
+        "zones": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Zones of the nodes, sorted."
+        },
+        "zone_counts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "description": "Nodes per zone (topology.kubernetes.io/zone)."
+        },
+        "kubelet_versions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Kubelet versions, sorted."
+        }
+      },
+      "required": [
+        "count"
+      ],
+      "description": "Nodes, summarized: nodes are not inventory items."
+    },
+    "argocd": {
+      "type": "object",
+      "properties": {
+        "applications": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Argo CD Applications collected."
+        },
+        "remote": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Applications that deploy to another cluster (their status is not used)."
+        },
+        "managed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Resources with manager argocd. 0 means installed, no managed objects found."
+        },
+        "from_status": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Resources found only in the status.resources of a local Application."
+        }
+      },
+      "required": [
+        "applications",
+        "managed"
+      ],
+      "description": "Set when the cluster serves the Argo CD Application kind."
+    },
+    "teamCoverage": {
+      "type": "object",
+      "properties": {
+        "namespaces": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Namespaces outside system namespaces."
+        },
+        "namespaces_with_team": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "resources": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Resources in those namespaces (cluster-scoped ones left out)."
+        },
+        "resources_with_team": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "namespaces",
+        "namespaces_with_team",
+        "resources",
+        "resources_with_team"
+      ],
+      "description": "What has a team, outside system namespaces."
+    }
+  }
+}

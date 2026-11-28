@@ -90,16 +90,21 @@ func newRenderCmd(g *globals) *cobra.Command {
 	cmd.Flags().StringSliceVarP(&contexts, "context", "c", nil, "context to render (repeatable; default: current context)")
 	cmd.Flags().StringVarP(&out, "output", "o", "", "output directory (default: <cache dir>/site)")
 	cmd.Flags().BoolVar(&open, "open", false, "open the page in the default browser")
-	addScaleFlags(cmd, &o, &rings)
+	addScaleFlags(cmd, &o, &rings, "auto")
 	return cmd
 }
 
-// addScaleFlags registers --scale, --axis and --rings, shared by render and compare.
-func addScaleFlags(cmd *cobra.Command, o *render.Options, rings *[]string) {
-	cmd.Flags().StringVar(&o.Scale, "scale", "30d", "initial ring scale: 30m, 1h, 5d, 10d, 30d, log or custom")
+// addScaleFlags registers --scale, --axis and --rings, shared by render and compare. render
+// defaults to auto (rings that follow the ages of one cluster); compare keeps 30d, because auto
+// squeezes the target's migration waves into the first rings.
+func addScaleFlags(cmd *cobra.Command, o *render.Options, rings *[]string, defaultScale string) {
+	cmd.Flags().StringVar(&o.Scale, "scale", defaultScale,
+		"initial ring scale: 30m, 1h, 5d, 10d, 30d, years (30d to 10y), log, auto (rings at quantiles of the resource ages) or custom")
 	cmd.Flags().StringVar(&o.Axis, "axis", "created", "initial time axis: created or changed")
 	cmd.Flags().StringSliceVar(rings, "rings", nil,
-		"custom rings, ascending: m, h or d suffix, a bare number is days (e.g. 30m,2h,1d,7d,30d or 5,15,30,90)")
+		"custom rings, ascending: m, h, d or y suffix, a bare number is days (e.g. 30m,2h,1d,7d,30d or 30d,90d,180d,1y,2y,5y)")
+	cmd.Flags().BoolVar(&o.ShowSystem, "show-system", false,
+		"start the page with the system namespaces shown (collect --system-ns decides which they are)")
 }
 
 // scaleOptions reads --rings into the options and validates them.

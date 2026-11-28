@@ -15,7 +15,7 @@ __CSS__
   <h1>kubestrata</h1>
   <div class="group" id="clusterGroup"><span class="lbl">cluster</span><select id="cluster"></select></div>
   <div class="group" id="cats"></div>
-  <div class="group"><button id="system" class="chip" title="namespaces matching the system pattern">system</button></div>
+  <div class="group"><button id="system" class="chip" title="show the system namespaces: the ones matching collect --system-ns (collected, hidden by default)">system</button></div>
   <div class="group" id="nsGroup"></div>
   <div class="group"><span class="lbl">scale</span><span id="scales"></span></div>
   <div class="group"><span class="lbl">axis</span>
@@ -23,7 +23,8 @@ __CSS__
     <button data-axis="changed" title="newest managedFields time, status ignored">changed</button></div>
   <div class="group"><span class="lbl">color</span><select id="color">
     <option value="cat">category</option><option value="manager">manager</option><option value="team">team</option></select></div>
-  <input type="search" id="q" placeholder="search name, image, label… ( / )">
+  <input type="search" id="q" placeholder="search: api, web · -kube · ns:payments kind:Deployment ( / )"
+    title="Terms separated by commas or spaces: any of them matches. &quot;quoted text&quot; is one term. -term excludes. ns:, kind:, team:, mgr: and name: match that field exactly (* is a wildcard): OR within a field, AND across fields. Example: ns:payments,ns:checkout kind:Deployment -mgr:argocd">
 </header>
 <main id="main">
   <div id="stage">

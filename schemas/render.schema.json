@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kubestrata/kubestrata/blob/main/schemas/render.schema.json",
+  "title": "kubestrata render --format json",
+  "description": "Where render wrote the site.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Version of this document. Consumers refuse a higher value than they support."
+    },
+    "index": {
+      "type": "string",
+      "description": "Absolute path of index.html."
+    },
+    "url": {
+      "type": "string",
+      "description": "file:// URL of index.html."
+    },
+    "clusters": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string",
+        "description": "Context."
+      }
+    }
+  },
+  "required": [
+    "clusters",
+    "index",
+    "schema_version",
+    "url"
+  ]
+}

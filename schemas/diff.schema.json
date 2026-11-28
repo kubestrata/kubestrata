@@ -1,0 +1,227 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kubestrata/kubestrata/blob/main/schemas/diff.schema.json",
+  "title": "kubestrata diff --format json",
+  "description": "Two snapshots of one cluster: source is the older one (--from), target the newer one (--to).",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Version of this document. Consumers refuse a higher value than they support."
+    },
+    "mode": {
+      "type": "string",
+      "const": "diff"
+    },
+    "source": {
+      "$ref": "#/$defs/side"
+    },
+    "target": {
+      "$ref": "#/$defs/side"
+    },
+    "collector_change": {
+      "$ref": "#/$defs/collector"
+    },
+    "totals": {
+      "$ref": "#/$defs/summary"
+    },
+    "namespaces": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/summary"
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/item"
+      }
+    }
+  },
+  "required": [
+    "items",
+    "mode",
+    "namespaces",
+    "schema_version",
+    "source",
+    "target",
+    "totals"
+  ],
+  "$defs": {
+    "side": {
+      "type": "object",
+      "properties": {
+        "cluster_id": {
+          "type": "string"
+        },
+        "context": {
+          "type": "string"
+        },
+        "distro": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "collected_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "resources": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tool": {
+          "type": "string",
+          "description": "kubestrata version that collected the snapshot."
+        }
+      },
+      "required": [
+        "cluster_id",
+        "collected_at",
+        "context",
+        "distro",
+        "resources",
+        "version"
+      ]
+    },
+    "collector": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "resources": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "from",
+        "resources",
+        "to"
+      ],
+      "description": "Set when the two snapshots come from different kubestrata versions."
+    },
+    "diff": {
+      "type": "object",
+      "properties": {
+        "fact": {
+          "type": "string"
+        },
+        "source": {
+          "description": "Source value; absent when the source has no such fact."
+        },
+        "target": {
+          "description": "Target value; absent when the target has no such fact."
+        }
+      },
+      "required": [
+        "fact"
+      ]
+    },
+    "item": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Identity key; the source resource of a kind translation."
+        },
+        "ns": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "equal",
+            "drift",
+            "gone",
+            "new"
+          ]
+        },
+        "target_id": {
+          "type": "string",
+          "description": "Target resource of a kind translation."
+        },
+        "translation": {
+          "type": "string",
+          "description": "Source kind → target kind, e.g. Route→HTTPRoute."
+        },
+        "diff": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diff"
+          },
+          "description": "Facts that differ (drift)."
+        },
+        "collector_facts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Facts only one side has, from different kubestrata versions."
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "state"
+      ]
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "ns": {
+          "type": "string",
+          "description": "Namespace, _ for cluster-scoped, total for the totals."
+        },
+        "team": {
+          "type": "string"
+        },
+        "system": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "target": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "equal": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "drift": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "gone": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "new": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "drift",
+        "equal",
+        "gone",
+        "new",
+        "ns",
+        "source",
+        "target"
+      ]
+    }
+  }
+}

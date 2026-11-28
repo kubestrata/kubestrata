@@ -19,8 +19,11 @@ repositório mostra os alertas abertos agora.
 | Alertas e security updates do Dependabot | advisories dos módulos do `go.mod` e das actions | continuamente | abre pull request com a correção |
 | Atualizações de versão do Dependabot ([`dependabot.yml`](../.github/dependabot.yml)) | módulos mais novos (Kubernetes e `golang.org/x` em grupo) e actions | toda semana | abre pull request |
 | Secret scanning e push protection | credenciais commitadas no repositório | a cada push | push com segredo detectado é recusado |
+| Cobertura dos testes unitários ([`ci.yml`](../.github/workflows/ci.yml)) | a fatia de statements que os testes unitários executam, impressa no resumo do job | todo pull request, todo push na `main` | não: medida, sem limite mínimo ainda |
+| [OpenSSF Scorecard](https://scorecard.dev) ([`scorecard.yml`](../.github/workflows/scorecard.yml)) | práticas de cadeia de suprimentos do repositório: dependências fixadas, permissões de token, proteção de branch, releases assinadas, SAST, ... | todo push na `main`, semanal | não: resultados no code scanning e no badge do README |
 | `go vet`, `staticcheck` ([`ci.yml`](../.github/workflows/ci.yml)) | padrões de bug | todo pull request, todo push na `main` | sim |
 | [`install-smoke.yml`](../.github/workflows/install-smoke.yml) | o binário instalado nunca imprime a credencial do kubeconfig (`contexts` num kubeconfig de teste com token) | depois de cada release, toda semana | sim |
+| [`lab.yml`](../.github/workflows/lab.yml) | num lab do kuberito (release fixada, checksum e assinatura cosign conferidos): nenhum valor de segredo semeado, `last-applied-configuration` ou ID de conta em snapshot algum (`TestLabNoSecretLeak`), e as páginas carregam sob a Content-Security-Policy sem erro (`make page-check`) | todo pull request, todo push na `main`, toda semana, depois que a variável `KUBERITO_PUBLIC` for `true` | sim |
 
 Os achados da biblioteca padrão dependem da versão do Go que compila o binário, que é a linha `go`
 do [`go.mod`](../go.mod) (o workflow de release lê essa linha). Um advisory novo do Go reprova o
@@ -29,11 +32,20 @@ do [`go.mod`](../go.mod) (o workflow de release lê essa linha). Um advisory nov
 ## Cadeia de suprimentos
 
 - Toda action está fixada pelo SHA do commit. Os workflows têm `contents: read` por padrão; só o
-  job de release (`contents: write`, `id-token: write`) e o job que dispara o smoke de instalação
-  (`actions: write`) recebem mais.
+  job de release (`contents: write`, `id-token: write`, `attestations: write`), o job do PyPI
+  (`id-token: write`) e o job que dispara o smoke de instalação (`actions: write`) recebem mais.
 - Os archives da release saem com `CGO_ENABLED=0`, `-trimpath` e metadados fixos no tar. O
   `checksums.txt` é assinado com cosign keyless (Sigstore, OIDC do GitHub); o README mostra como
   verificar um archive.
+- As releases depois da 0.1.4 trazem attestations de artefato do GitHub (`actions/attest`
+  v4.2.2): build provenance SLSA para todo
+  archive do `checksums.txt` e um SBOM CycloneDX por archive (`cyclonedx-gomod` v1.12.0: os módulos
+  e a biblioteca padrão daquele build GOOS/GOARCH), anexado à release e com attestation. O
+  `gh attestation verify <archive> -R kubestrata/kubestrata` confere a provenance sem cosign;
+  acrescente `--predicate-type https://cyclonedx.org/bom` para o SBOM.
+- Os wheels do PyPI são publicados por Trusted Publishing com attestations PEP 740:
+  `uvx pypi-attestations verify pypi --repository https://github.com/kubestrata/kubestrata
+  pypi:<nome do wheel>` confere um deles.
 - A fórmula do Homebrew fixa cada archive pelo `sha256`. O workflow de release atualiza o
   [kubestrata/homebrew-tap](https://github.com/kubestrata/homebrew-tap) com uma deploy key que só
   escreve nesse repositório.
@@ -41,7 +53,7 @@ do [`go.mod`](../go.mod) (o workflow de release lê essa linha). Um advisory nov
 ## Repetir as checagens numa release
 
 ```sh
-v=0.1.3
+v=0.1.4
 gh release download "v${v}" -R kubestrata/kubestrata -p "kubestrata_${v}_linux_amd64.tar.gz"
 tar -xzf "kubestrata_${v}_linux_amd64.tar.gz" kubestrata
 go version kubestrata                                   # toolchain do Go que compilou o binário

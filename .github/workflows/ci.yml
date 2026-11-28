@@ -25,8 +25,8 @@ jobs:
       - name: gofmt
         run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
 
-      # The lab e2e (test/e2e, build tag lab) is vetted here but runs only locally: it needs a
-      # running kuberito lab (https://github.com/kuberito/kuberito, `make lab-test`).
+      # The lab e2e (test/e2e, build tag lab) is vetted here and runs in lab.yml on a kuberito lab
+      # (https://github.com/kuberito/kuberito), or locally with `make lab-test`.
       - name: go vet
         run: go vet ./... && go vet -tags lab ./test/...
 
@@ -56,5 +56,10 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: go test -race
-        run: go test -race -count=1 ./...
+      # Coverage is measured and printed (job summary too); there is no threshold yet.
+      - name: go test -race (coverage)
+        run: |
+          go test -race -count=1 -coverprofile=coverage.out ./...
+          total="$(go tool cover -func=coverage.out | tail -n 1)"
+          echo "$total"
+          printf 'Unit test coverage: %s\n' "$(echo "$total" | awk '{print $NF}')" >> "$GITHUB_STEP_SUMMARY"

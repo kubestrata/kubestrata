@@ -1,19 +1,26 @@
-// Package redact masks cloud account ids and managed API endpoint hosts in what kubestrata
-// prints or renders under --redact. The cache always keeps the real values.
+// Package redact masks cloud account ids, managed API endpoint hosts and OpenShift cluster
+// domains in what kubestrata prints or renders under --redact. The cache always keeps the real
+// values.
 //
 //	arn:aws:eks:us-west-2:000000000000:cluster/x        → arn:aws:eks:us-west-2:redacted:cluster/x
 //	000000000000.dkr.ecr.us-west-2.amazonaws.com/app    → redacted.dkr.ecr.us-west-2.amazonaws.com/app
 //	ABCDEF0123.gr7.us-west-2.eks.amazonaws.com          → redacted.gr7.us-west-2.eks.amazonaws.com
 //	myaks-dns-1a2b3c4d.hcp.eastus.azmk8s.io             → redacted.hcp.eastus.azmk8s.io
+//	api.ocp1.example.com:6443                           → api.redacted:6443
+//	shop-web.apps.ocp1.example.com                      → shop-web.apps.redacted
 //
 // Names (contexts, kubeconfig clusters and users) also lose any standalone run of 12 digits, the
-// shape of an AWS account id outside an ARN.
+// shape of an AWS account id outside an ARN, and the dashed API host and the user that `oc login`
+// writes into them (default/api-ocp1-example-com:6443/user-a → default/api-redacted:6443/redacted,
+// user-a/api-ocp1-example-com:6443 → redacted/api-redacted:6443).
 package redact
 
 import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
+	"strconv"
 )
 
 // Mask replaces every masked part.
@@ -28,25 +35,67 @@ var (
 	// least two more labels (<id>.gr7.<region>.eks.amazonaws.com, <id>.hcp.<region>.azmk8s.io), so
 	// API groups such as metrics.eks.amazonaws.com are left alone.
 	endpoint = regexp.MustCompile(`\b[A-Za-z0-9-]+((?:\.[A-Za-z0-9-]+){2,}\.(?:eks\.amazonaws\.com(?:\.cn)?|azmk8s\.io))\b`)
-	digits   = regexp.MustCompile(`[0-9]+`)
+	// OpenShift serves the API at api.<cluster>.<base> (api-int.<cluster>.<base> inside the cluster)
+	// and Routes under apps.<cluster>.<base>; <cluster>.<base> names the cluster and the company and
+	// is masked whole. api and api-int must be the first label of the host; apps may follow other
+	// labels (shop-web.apps.<cluster>.<base>). At least three labels must follow, so API groups and
+	// CRD names (apps.openshift.io, clonesets.apps.kruise.io, api.cerbos.dev) are left alone; a
+	// cluster under a one-label base domain (api.ocp.lab) is not masked.
+	openshiftAPI  = regexp.MustCompile(`(^|[^A-Za-z0-9.-])(api(?:-int)?\.)(?:[A-Za-z0-9-]+\.){2,}[A-Za-z0-9-]+`)
+	openshiftApps = regexp.MustCompile(`((?:^|[^A-Za-z0-9-])apps\.)(?:[A-Za-z0-9-]+\.){2,}[A-Za-z0-9-]+`)
+	// oc login names the cluster <api host with dashes>:<port>, the user <user>/<cluster> and the
+	// context <namespace>/<cluster>/<user>. The dashed host has at least two parts after api.
+	ocLoginHost = regexp.MustCompile(`(^|[^A-Za-z0-9.-])api-[A-Za-z0-9]+-[A-Za-z0-9-]+(:[0-9]+)`)
+	// After the host is masked, the user of those names (personal data) is masked too: the part
+	// after the cluster in a context, the part before it in a user name.
+	ocLoginCtxUser = regexp.MustCompile(`(/api-` + Mask + `:[0-9]+/)[^\s"'/()]+`)
+	ocLoginUser    = regexp.MustCompile(`(^|[\s"'(])[^\s"'/()]+(/api-` + Mask + `:[0-9]+)($|[\s"')])`)
+	digits         = regexp.MustCompile(`[0-9]+`)
 )
 
-// Text masks account ids in ARNs and ECR registries and the cluster label of managed endpoints.
-// The patterns never match JSON syntax or numbers, so Text is safe on a JSON document.
+// Text masks account ids in ARNs and ECR registries, the cluster label of managed endpoints and
+// the cluster domain of OpenShift API and Route hosts. The patterns never match JSON syntax or
+// numbers, so Text is safe on a JSON document.
 func Text(s string) string {
 	s = arnAccount.ReplaceAllString(s, "${1}"+Mask+":")
 	s = ecrAccount.ReplaceAllString(s, Mask+"${1}")
-	return endpoint.ReplaceAllString(s, Mask+"${1}")
+	s = endpoint.ReplaceAllString(s, Mask+"${1}")
+	s = openshiftAPI.ReplaceAllString(s, "${1}${2}"+Mask)
+	return openshiftApps.ReplaceAllString(s, "${1}"+Mask)
 }
 
-// Name is Text plus any run of exactly 12 digits, for context, cluster and user names.
+// Name is Text plus the dashed API host and the user of oc login names and any run of exactly 12
+// digits, for context, cluster and user names and for messages that quote them.
 func Name(s string) string {
-	return digits.ReplaceAllStringFunc(Text(s), func(d string) string {
+	s = ocLoginHost.ReplaceAllString(Text(s), "${1}api-"+Mask+"${2}")
+	s = ocLoginCtxUser.ReplaceAllString(s, "${1}"+Mask)
+	s = ocLoginUser.ReplaceAllString(s, "${1}"+Mask+"${2}${3}")
+	return digits.ReplaceAllStringFunc(s, func(d string) string {
 		if len(d) == 12 {
 			return Mask
 		}
 		return d
 	})
+}
+
+// Pseudonyms maps each distinct non-empty value to redacted-1, redacted-2, ... in sorted order.
+// The same set of values gives the same masks, so a value keeps its mask across every document of
+// one run while different values stay apart (team names taken from user names).
+func Pseudonyms(values []string) map[string]string {
+	seen := map[string]bool{}
+	var uniq []string
+	for _, v := range values {
+		if v != "" && !seen[v] {
+			seen[v] = true
+			uniq = append(uniq, v)
+		}
+	}
+	sort.Strings(uniq)
+	out := make(map[string]string, len(uniq))
+	for i, v := range uniq {
+		out[v] = Mask + "-" + strconv.Itoa(i+1)
+	}
+	return out
 }
 
 // Copy returns a deep copy of v with Text applied to every string: v is written as JSON, masked

@@ -2,13 +2,14 @@
 
 [![CI](https://github.com/kubestrata/kubestrata/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kubestrata/kubestrata/actions/workflows/ci.yml?query=branch%3Amain)
 [![security](https://github.com/kubestrata/kubestrata/actions/workflows/security.yml/badge.svg?branch=main)](docs/security-analysis.md)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/kubestrata/kubestrata/badge)](https://scorecard.dev/viewer/?uri=github.com/kubestrata/kubestrata)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 [![Go 1.27](https://img.shields.io/badge/go-1.27-00ADD8)](go.mod)
 
 [Português](README.pt-BR.md)
 
-> **Status: 0.1.x, first releases.** Interfaces may still change before 1.0
-> ([CHANGELOG](CHANGELOG.md)).
+> **Status: 0.1.x, first releases.** Interfaces may still change before 1.0: see
+> [docs/compatibility.md](docs/compatibility.md) for what is stable and the [CHANGELOG](CHANGELOG.md).
 
 Time-layered inventory of Kubernetes clusters for migration planning. `kubestrata` reads the
 contexts in your kubeconfig, collects a read-only, sanitized inventory into a local cache and
@@ -66,6 +67,26 @@ tar -xzf "kubestrata_${v}_${os}_${arch}.tar.gz" kubestrata
 On Linux, `sha256sum -c -` does the same as `shasum -a 256 -c -`. To build from a clone instead,
 `make build` writes `bin/kubestrata`.
 
+Releases after 0.1.4 also carry GitHub artifact attestations: SLSA build provenance for every
+archive and a CycloneDX SBOM per archive (`kubestrata_${v}_${os}_${arch}.cdx.json`, attached to the
+release and attested). To verify without cosign, with the [GitHub CLI](https://cli.github.com):
+
+```sh
+gh attestation verify "kubestrata_${v}_${os}_${arch}.tar.gz" -R kubestrata/kubestrata
+gh attestation verify "kubestrata_${v}_${os}_${arch}.tar.gz" -R kubestrata/kubestrata \
+  --predicate-type https://cyclonedx.org/bom          # the SBOM attestation
+```
+
+The PyPI wheels have [PEP 740](https://peps.python.org/pep-0740/) attestations from Trusted
+Publishing: PyPI shows them under **Provenance** on each file's page, and
+[`pypi-attestations`](https://github.com/pypi/pypi-attestations) checks one against this
+repository:
+
+```sh
+uvx pypi-attestations verify pypi --repository https://github.com/kubestrata/kubestrata \
+  "pypi:kubestrata-${v}-py3-none-macosx_12_0_arm64.whl"
+```
+
 ### Tested platforms
 
 | Platform | GitHub runner | Install smoke (`install-smoke.yml`) |
@@ -95,17 +116,90 @@ kubestrata compare -c <source> -c <target> --open   # side by side, with the cov
 
 `render` and `compare` read the cache only. Run `collect --force` to refresh it.
 
+First time on OpenShift? [docs/openshift.md](docs/openshift.md) walks through login with the
+cluster CA, the RBAC files, collect, the scales for long-lived clusters, `--redact`, what the page
+shows for OpenShift, the comparison with the target and the clean-up.
+
 ### No cluster at hand? Try it on the kuberito lab
 
-[kuberito](https://github.com/kuberito/kuberito) (not public yet) brings up two small local clusters on Docker, an
-OpenShift-like source and an EKS-like target, with a migration in progress. Install it as its
-README describes, then:
+[kuberito](https://github.com/kuberito/kuberito) brings up two small local clusters on Docker, an
+OpenShift-like source and an EKS-like target, with a migration in progress. It is the lab of
+kubestrata's end-to-end tests ([`lab.yml`](.github/workflows/lab.yml) runs them in CI on the full
+profile). Install it as its README describes (`brew install kuberito/tap/kuberito`), then:
 
 ```sh
 kuberito up && eval "$(kuberito env)"     # KUBECONFIG=~/.kuberito/kubeconfig for this shell
 kubestrata collect -c kuberito-source -c kuberito-target
 kubestrata compare -c kuberito-source -c kuberito-target --open
 ```
+
+## Permissions
+
+kubestrata needs `list` on the kinds it inventories and `get` on the `kube-system` namespace (the
+cluster identity), nothing else. Two ClusterRoles ship in [`deploy/rbac/`](deploy/rbac/), each with
+a ServiceAccount and a ClusterRoleBinding in the namespace `kubestrata`:
+
+| File | Grants | Collect with |
+|---|---|---|
+| [`kubestrata-reader.yaml`](deploy/rbac/kubestrata-reader.yaml) | `list` on every kind, custom resources included | `kubestrata collect` |
+| [`kubestrata-reader-no-secrets.yaml`](deploy/rbac/kubestrata-reader-no-secrets.yaml) | `list` on the inventory kinds and common custom resource groups, never on Secrets | `kubestrata collect --no-secrets` |
+
+kubestrata reads Secrets as metadata only, but RBAC has no metadata-only permission: `list` on
+Secrets lets the holder read their values with another client. Without Secrets (`--no-secrets`,
+the same as `--skip-kinds core/Secret`), the inventory loses the Helm release state (release,
+revision and status, kept in `helm.sh/release.v1` Secrets) and the links from workloads, Ingresses
+and Gateways to Secrets. Helm is still detected from the labels and annotations of the objects,
+and references to Secrets are not reported as missing. A custom resource group that
+`kubestrata-reader-no-secrets` does not list is reported as `Forbidden` in the snapshot errors:
+add the group to the role, or leave the kind out with `--skip-kinds <group>/<Kind>`. Skipped kinds
+are recorded in the snapshot (`scope.skipped_kinds`) and shown in the page.
+
+Collect with a short-lived ServiceAccount token instead of your personal credentials, from a
+kubeconfig that holds only that token (the cluster's CA comes from your current context):
+
+```sh
+kubectl apply -f deploy/rbac/kubestrata-reader-no-secrets.yaml
+dir="$(mktemp -d)"; ctx=source
+kubectl config view --minify --raw -o jsonpath='{.clusters[0].cluster.certificate-authority-data}' \
+  | base64 -d > "$dir/ca.crt"
+KUBECONFIG="$dir/kubeconfig" kubectl config set-cluster "$ctx" --embed-certs \
+  --server="$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')" \
+  --certificate-authority="$dir/ca.crt"
+KUBECONFIG="$dir/kubeconfig" kubectl config set-credentials "$ctx" \
+  --token="$(kubectl create token kubestrata-reader-no-secrets -n kubestrata --duration=1h)"
+KUBECONFIG="$dir/kubeconfig" kubectl config set-context "$ctx" --cluster="$ctx" --user="$ctx"
+kubestrata --kubeconfig "$dir/kubeconfig" collect -c "$ctx" --no-secrets
+rm -rf "$dir"
+kubectl delete -f deploy/rbac/kubestrata-reader-no-secrets.yaml   # when the inventory is done
+```
+
+`render -c source` and `compare` read the cache afterwards, with no kubeconfig at all. If your
+kubeconfig names a CA file (`certificate-authority`) instead of embedding it, pass that file to
+`--certificate-authority`.
+
+### Kubeconfig hygiene
+
+`kubestrata contexts` reads the kubeconfig without touching any cluster and flags, in a `NOTES`
+column (`insecure_skip_tls_verify` and `static_token` in JSON), the contexts whose credential is
+exposed: a cluster with `insecure-skip-tls-verify: true` (anyone on the network path can pose as the
+API server and receive your token) and a user with a static bearer token (`token` or
+`tokenFile`) instead of an exec plugin or a client certificate. The token itself is never read
+into the output.
+
+To verify the API server instead of skipping the check, get the CA bundle that signs its
+certificate from the cluster administrator (on OpenShift, the CA of the API server's serving
+certificate), check its fingerprint out of band, then point the cluster at it and turn the check
+back on:
+
+```sh
+kubectl config set-cluster <cluster> --certificate-authority=ca.crt --embed-certs \
+  --insecure-skip-tls-verify=false
+oc login --certificate-authority=ca.crt https://api.<cluster>.<base-domain>:6443   # or log in again with it
+```
+
+Prefer an exec plugin or a short-lived ServiceAccount token (see Permissions) to a long-lived
+personal token. A token from `oc login` is an OAuth access token: run `oc logout` when the
+inventory is done, which deletes it on the server and removes it from the kubeconfig.
 
 ## Screenshots
 
@@ -127,16 +221,29 @@ Compare view of `kuberito-source` and `kuberito-target`:
 | `kubestrata render -c source --open` | radial view, offline HTML |
 | `kubestrata compare -c source -c target` | equal / drift / pending / new and coverage, side-by-side HTML |
 | `kubestrata diff -c source` | two snapshots of the same cluster (newest and the one before, or `--from`/`--to`): new / gone / drift / equal |
-| `kubestrata` | interactive TUI (planned) |
+| `kubestrata summary -c source` | migration summary as Markdown (or JSON): resources by category and kind, nodes by instance type and zone, managers, biggest namespaces, end-of-life kinds, objects without an expected owner, team coverage, Argo CD |
 
-`--format json` prints a machine-readable document with `schema_version` 1. `--redact` masks AWS
-account ids and EKS/AKS endpoint hosts in the output and the site; the cache keeps the real values.
+`--format json` prints a machine-readable document with `schema_version` 1, described by the JSON
+Schemas in [`schemas/`](schemas/); [docs/compatibility.md](docs/compatibility.md) says what may still
+change before 1.0. `--redact` masks AWS
+account ids, EKS/AKS endpoint hosts, OpenShift cluster domains (`api.redacted:6443`,
+`web.apps.redacted`), the API host in `oc login` context names and team names taken from
+`openshift.io/requester` (user names) in the output and the site; the cache keeps the real values.
 
 Ring scales (`render`/`compare --scale`, also switchable in the page): `30m` and `1h` (12 rings of
-30 minutes or 1 hour, for young clusters), `5d`, `10d`, `30d`, `log`, and custom rings with unit
-suffixes, `--rings 30m,2h,1d,7d,30d` (a bare number is days).
+30 minutes or 1 hour, for young clusters), `5d`, `10d`, `30d` (the default of `compare`), `years` (30d, 90d,
+180d, then 1y to 10y, for long-lived clusters), `log`, `auto` (the default of `render`: rings at
+quantiles of the resource ages of the rendered snapshots, rounded: `270d,1y,1.5y,2y,2.5y,3y` on the
+kuberito source), and
+custom rings with unit suffixes `m`, `h`, `d` and `y`, `--rings 30m,2h,1d,7d,30d` or
+`--rings 30d,90d,180d,1y,2y,3y,5y` (a bare number is days).
 
-`compare` pairs resources by `group/Kind/namespace/name`:
+`compare` pairs resources by `group/Kind/namespace/name`, then pairs what the target serves with
+another kind: an OpenShift Route with an HTTPRoute or an Ingress (by host, then name), an Ingress
+with an HTTPRoute (Ingress to Gateway API) and a DeploymentConfig with a Deployment (by name), in
+the same namespace, compared on the facts both kinds express and shown with the translation
+(`Route→HTTPRoute`) in the JSON and the page. Platform kinds (OpenShift cluster operators) are
+listed but left out of the counts and the coverage:
 
 | State | Meaning |
 |---|---|
@@ -146,7 +253,28 @@ suffixes, `--rings 30m,2h,1d,7d,30d` (a bare number is days).
 | new | only in the target |
 
 Coverage per namespace = (equal + drift) / resources in the source. System namespaces are left out
-of the totals.
+of the totals. `collect --system-ns <regexp>` decides which namespaces are system (default: the
+Kubernetes, OpenShift and cloud provider ones): they are still collected, only hidden by default
+in the page (`system` toggle, `render`/`compare --show-system`) and left out of the totals.
+
+### The page
+
+The header filters by category, system namespaces, scale, axis and color; the search box (`/`)
+dims what does not match. The `platform` category (custom resources of OpenShift's cluster
+operators, such as MachineConfig and APIRequestCount) starts hidden: click its chip, or add
+`show=platform` to the URL hash. Search syntax, the same on the render and compare pages:
+
+| Query | Matches |
+|---|---|
+| `api` | one term: anywhere in the id, name, kind, app, team, manager, labels or facts, as before |
+| `api, web` or `api web` | any of the terms (OR) |
+| `"payments api"` | the quoted text as one term |
+| `-kube` | everything except what the term matches |
+| `ns:payments kind:Deployment` | a field, exactly (`*` is a wildcard): `ns:`, `kind:`, `team:`, `mgr:`, `name:`; OR within a field, AND across fields |
+| `ns:payments,ns:checkout kind:Deployment -mgr:argocd` | Deployments of either namespace not managed by Argo CD |
+
+The state lives in the URL hash (`#scale=log&color=manager&q=kind:Route`), so a view can be
+bookmarked or shared with the site. `ns:_` matches cluster-scoped resources.
 
 ## Security
 
@@ -163,7 +291,7 @@ Checks, findings history and how to repeat them on a release:
 
 ## Design
 
-See [docs/design.md](docs/design.md).
+See [docs/design.md](docs/design.md), and [docs/roadmap.md](docs/roadmap.md) for the 1.0 checklist.
 
 ## Contributing
 

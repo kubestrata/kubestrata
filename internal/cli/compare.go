@@ -5,6 +5,7 @@ import (
 	"io"
 	"math"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -68,6 +69,7 @@ func newCompareCmd(g *globals) *cobra.Command {
 				out = filepath.Join(c.Dir, "compare")
 			}
 			// compared on the real values, masked for output and site
+			teams := g.teamMask(snaps)
 			if snaps, err = g.snapshots(snaps); err != nil {
 				return err
 			}
@@ -76,6 +78,9 @@ func newCompareCmd(g *globals) *cobra.Command {
 					return err
 				}
 				res.Source.Context, res.Target.Context = redact.Name(res.Source.Context), redact.Name(res.Target.Context)
+				for i := range res.Namespaces {
+					res.Namespaces[i].Team = maskTeam(teams, res.Namespaces[i].Team)
+				}
 			}
 			o.Version, o.Compare = g.version, res
 			index, err := render.Write(out, snaps, o)
@@ -101,7 +106,7 @@ func newCompareCmd(g *globals) *cobra.Command {
 	cmd.Flags().StringSliceVarP(&contexts, "context", "c", nil, "source context, then target context")
 	cmd.Flags().StringVarP(&out, "output", "o", "", "output directory (default: <cache dir>/compare)")
 	cmd.Flags().BoolVar(&open, "open", false, "open the page in the default browser")
-	addScaleFlags(cmd, &o, &rings)
+	addScaleFlags(cmd, &o, &rings, "30d")
 	return cmd
 }
 
@@ -134,9 +139,37 @@ func printCompare(w io.Writer, r *compare.Result, url string) error {
 	if note := collectorNote(r.Collector); note != "" {
 		lines = append(lines, note)
 	}
+	if note := translationNote(r.Items); note != "" {
+		lines = append(lines, note)
+	}
 	lines = append(lines, url)
 	_, err := lipgloss.Fprintln(w, strings.Join(lines, "\n"))
 	return err
+}
+
+// translationNote counts the pairs across kinds (Route→HTTPRoute, DeploymentConfig→Deployment),
+// which the coverage counts as migrated.
+func translationNote(items []compare.Item) string {
+	n := map[string]int{}
+	var kinds []string
+	for _, it := range items {
+		if it.Translation == "" {
+			continue
+		}
+		if n[it.Translation] == 0 {
+			kinds = append(kinds, it.Translation)
+		}
+		n[it.Translation]++
+	}
+	if len(kinds) == 0 {
+		return ""
+	}
+	sort.Strings(kinds)
+	parts := make([]string, len(kinds))
+	for i, k := range kinds {
+		parts[i] = fmt.Sprintf("%s %d", k, n[k])
+	}
+	return "kind translations, paired across kinds and counted as covered: " + strings.Join(parts, ", ")
 }
 
 // pct rounds half up like Math.round in the page (coverage is never negative), so the CLI and

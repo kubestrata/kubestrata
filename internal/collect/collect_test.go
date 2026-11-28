@@ -8,6 +8,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -48,6 +49,9 @@ var resourceOf = map[string]APIResource{
 type fakeSource struct {
 	objs    map[schema.GroupResource][]unstructured.Unstructured
 	secrets []SecretMeta
+	apis    []APIResource // served resources; nil serves resourceOf and Secrets
+	// secretCalls counts ListSecretsMeta calls
+	secretCalls atomic.Int32
 }
 
 func loadFake(t *testing.T) *fakeSource {
@@ -105,6 +109,9 @@ func (f *fakeSource) ServerVersion(context.Context) (string, error) {
 }
 func (f *fakeSource) KubeSystemUID(context.Context) (string, error) { return "ns-kube-system", nil }
 func (f *fakeSource) Discover(context.Context) ([]APIResource, []error) {
+	if f.apis != nil {
+		return f.apis, nil
+	}
 	var out []APIResource
 	for _, r := range resourceOf {
 		out = append(out, r)
@@ -118,7 +125,10 @@ func (f *fakeSource) List(_ context.Context, r APIResource) ([]unstructured.Unst
 	}
 	return f.objs[schema.GroupResource{Group: r.Group, Resource: r.Resource}], nil
 }
-func (f *fakeSource) ListSecretsMeta(context.Context) ([]SecretMeta, error) { return f.secrets, nil }
+func (f *fakeSource) ListSecretsMeta(context.Context) ([]SecretMeta, error) {
+	f.secretCalls.Add(1)
+	return f.secrets, nil
+}
 
 var fixedNow = func() time.Time { return time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC) }
 
@@ -277,6 +287,13 @@ func TestNoiseAndClassification(t *testing.T) {
 	}
 	if teams["payments"] != "team-payments" || teams["legacy"] != "alice" {
 		t.Errorf("namespace teams = %v", teams)
+	}
+	from := map[string]string{}
+	for _, n := range snap.Namespaces {
+		from[n.Name] = n.TeamFrom
+	}
+	if from["payments"] != "team" || from["legacy"] != TeamFromRequester {
+		t.Errorf("namespace team sources = %v", from)
 	}
 	if find(t, snap, "core/Secret/payments/api-db").Team != "team-payments" {
 		t.Error("resource does not inherit the namespace team")
@@ -454,6 +471,16 @@ func TestManagerVocabulary(t *testing.T) {
 			[]metav1.ManagedFieldsEntry{e("eks", t1)}, false, MgrArgoCD},
 		{"custom resource owner wins over platform", nil, []metav1.ManagedFieldsEntry{e("eks-auto-mode", t1)}, true, MgrOperator},
 		{"unknown tool", nil, []metav1.ManagedFieldsEntry{e("pulumi-kubernetes", t1)}, false, MgrOther},
+		{"kapp", nil, []metav1.ManagedFieldsEntry{e("kapp", t1)}, false, MgrKapp},
+		{"kapp-controller", nil, []metav1.ManagedFieldsEntry{e("kapp-controller", t1)}, false, MgrKapp},
+		{"kapp label wins over helm", map[string]string{"kapp.k14s.io/app": "1690000000", "app.kubernetes.io/managed-by": "Helm"},
+			[]metav1.ManagedFieldsEntry{e("kapp", t1)}, false, MgrKapp},
+		{"kappa is not kapp", nil, []metav1.ManagedFieldsEntry{e("kappa", t1)}, false, MgrOther},
+		{"web console", nil, []metav1.ManagedFieldsEntry{e("Mozilla", t1)}, false, MgrConsole},
+		{"created by kubectl, edited in the console", nil, []metav1.ManagedFieldsEntry{e("kubectl-create", t1), e("Mozilla", t2)},
+			false, MgrKubectl},
+		{"created in the console, then kubectl", nil, []metav1.ManagedFieldsEntry{e("Mozilla", t1), e("kubectl-edit", t2)},
+			false, MgrConsole},
 		{"no data", nil, nil, false, MgrUnknown},
 	}
 	for _, c := range cases {
@@ -525,5 +552,362 @@ func TestCreatorSkipsSystemManagers(t *testing.T) {
 	}
 	if got := creatorManager(mf[:1]); got != "kube-controller-manager" {
 		t.Fatalf("only system manager: creator = %s", got)
+	}
+}
+
+// obj builds an unstructured object created at 2026-01-01 by one field manager.
+func obj(apiVersion, kind, ns, name, manager string, labels map[string]string, fields map[string]any) unstructured.Unstructured {
+	meta := map[string]any{"name": name, "uid": "uid-" + ns + "-" + kind + "-" + name,
+		"creationTimestamp": "2026-01-01T00:00:00Z",
+		"managedFields":     []any{map[string]any{"manager": manager, "operation": "Update", "time": "2026-01-01T00:00:00Z"}}}
+	if ns != "" {
+		meta["namespace"] = ns
+	}
+	if labels != nil {
+		l := map[string]any{}
+		for k, v := range labels {
+			l[k] = v
+		}
+		meta["labels"] = l
+	}
+	o := map[string]any{"apiVersion": apiVersion, "kind": kind, "metadata": meta}
+	for k, v := range fields {
+		o[k] = v
+	}
+	return unstructured.Unstructured{Object: o}
+}
+
+var applicationAPI = APIResource{Group: "argoproj.io", Version: "v1alpha1", Resource: "applications", Kind: "Application",
+	Namespaced: true, CRD: true}
+
+// smallSource serves namespaces and the given resources with their objects.
+func smallSource(objs map[APIResource][]unstructured.Unstructured) *fakeSource {
+	f := &fakeSource{objs: map[schema.GroupResource][]unstructured.Unstructured{}}
+	ns := resourceOf["/Namespace"]
+	f.apis = []APIResource{ns}
+	f.objs[schema.GroupResource{Resource: "namespaces"}] = []unstructured.Unstructured{
+		obj("v1", "Namespace", "", "ns-a", "kubectl-create", nil, nil),
+		obj("v1", "Namespace", "", "openshift-gitops", "kubectl-create", nil, nil)}
+	for r, list := range objs {
+		f.apis = append(f.apis, r)
+		f.objs[schema.GroupResource{Group: r.Group, Resource: r.Resource}] = list
+	}
+	return f
+}
+
+func application(name, server string, managed ...map[string]any) unstructured.Unstructured {
+	var res []any
+	for _, r := range managed {
+		res = append(res, r)
+	}
+	return obj("argoproj.io/v1alpha1", "Application", "openshift-gitops", name, "kubectl-client-side-apply", nil,
+		map[string]any{"spec": map[string]any{"destination": map[string]any{"server": server, "namespace": "ns-a"}},
+			"status": map[string]any{"resources": res}})
+}
+
+// Argo CD objects tracked by neither label nor annotation are attributed through the
+// status.resources of the Applications that deploy to this cluster (K14).
+func TestArgoCDFromApplicationStatus(t *testing.T) {
+	deploy, svc, sc := resourceOf["apps/Deployment"], resourceOf["/Service"], resourceOf["storage.k8s.io/StorageClass"]
+	src := smallSource(map[APIResource][]unstructured.Unstructured{
+		deploy: {obj("apps/v1", "Deployment", "ns-a", "web", "kubectl-client-side-apply", nil, nil),
+			obj("apps/v1", "Deployment", "ns-a", "other", "kubectl-client-side-apply", nil, nil)},
+		svc: {obj("v1", "Service", "ns-a", "web", "argocd-controller", map[string]string{"argocd.argoproj.io/instance": "web"},
+			map[string]any{"spec": map[string]any{"ports": []any{map[string]any{"port": int64(80)}}}})},
+		sc: {obj("storage.k8s.io/v1", "StorageClass", "", "fast", "kubectl-create", nil, map[string]any{"provisioner": "csi.example.com"})},
+		applicationAPI: {
+			application("web", "https://kubernetes.default.svc",
+				map[string]any{"group": "apps", "kind": "Deployment", "namespace": "ns-a", "name": "web"},
+				map[string]any{"kind": "Service", "namespace": "ns-a", "name": "web"},
+				map[string]any{"group": "storage.k8s.io", "kind": "StorageClass", "name": "fast"},
+				map[string]any{"group": "apps", "kind": "Deployment", "namespace": "ns-a", "name": "not-collected"}),
+			// a remote cluster's objects share names with local ones: not attributed
+			application("remote", "https://api.remote.example.com:6443",
+				map[string]any{"group": "apps", "kind": "Deployment", "namespace": "ns-a", "name": "other"}),
+		},
+	})
+	snap, err := Collect(context.Background(), src, Options{Context: "lab", ToolVersion: "test", CRDs: true, Now: fixedNow})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]string{
+		"apps/Deployment/ns-a/web":                     MgrArgoCD,
+		"core/Service/ns-a/web":                        MgrArgoCD,
+		"storage.k8s.io/StorageClass/_/fast":           MgrArgoCD,
+		"apps/Deployment/ns-a/other":                   MgrKubectl,
+		"argoproj.io/Application/openshift-gitops/web": MgrKubectl,
+	} {
+		if got := find(t, snap, id).Manager; got != want {
+			t.Errorf("%s manager = %s, want %s", id, got, want)
+		}
+	}
+	want := snapshot.ArgoCD{Applications: 2, Remote: 1, Managed: 3, FromStatus: 2}
+	if a := snap.Cluster.ArgoCD; a == nil || *a != want {
+		t.Errorf("argocd = %+v, want %+v", a, want)
+	}
+}
+
+// With the Application kind served and nothing attributed, the snapshot says so; without the
+// kind, it says nothing.
+func TestArgoCDInstalledNothingManaged(t *testing.T) {
+	src := smallSource(map[APIResource][]unstructured.Unstructured{
+		resourceOf["apps/Deployment"]: {obj("apps/v1", "Deployment", "ns-a", "web", "kubectl-client-side-apply", nil, nil)},
+		applicationAPI:                nil,
+	})
+	snap, err := Collect(context.Background(), src, Options{Context: "lab", ToolVersion: "test", CRDs: true, Now: fixedNow})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := snap.Cluster.ArgoCD; a == nil || *a != (snapshot.ArgoCD{}) {
+		t.Errorf("argocd = %+v, want installed with nothing managed", a)
+	}
+	if a := collectFixture(t).Cluster.ArgoCD; a != nil {
+		t.Errorf("fixture without Argo CD: argocd = %+v", a)
+	}
+}
+
+func TestLocalDestination(t *testing.T) {
+	for dest, want := range map[[2]string]bool{
+		{"https://kubernetes.default.svc", ""}:      true,
+		{"https://kubernetes.default.svc/", ""}:     true,
+		{"", "in-cluster"}:                          true,
+		{"", ""}:                                    true,
+		{"https://api.remote.example.com:6443", ""}: false,
+		{"", "remote"}:                              false,
+	} {
+		if got := localDestination(map[string]any{"server": dest[0], "name": dest[1]}); got != want {
+			t.Errorf("%v: local %v, want %v", dest, got, want)
+		}
+	}
+}
+
+func TestSkipMatcher(t *testing.T) {
+	m, err := SkipMatcher([]string{"core/Secret", "route.openshift.io/Route", "machineconfig", " Pod "})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		group, kind string
+		want        bool
+	}{
+		{"", "Secret", true}, {"example.com", "Secret", false}, {"route.openshift.io", "Route", true},
+		{"gateway.networking.k8s.io", "HTTPRoute", false}, {"machineconfiguration.openshift.io", "MachineConfig", true},
+		{"", "Pod", true}, {"", "ConfigMap", false}, {"Route.OpenShift.io", "route", true},
+	} {
+		if got := m(c.group, c.kind); got != c.want {
+			t.Errorf("%s/%s: skipped %v, want %v", c.group, c.kind, got, c.want)
+		}
+	}
+	for _, bad := range [][]string{{""}, {"a/b/c"}, {"core/"}, {"route.openshift.io/ Route"}} {
+		if _, err := SkipMatcher(bad); err == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+}
+
+// Without Secrets the inventory runs with a role that cannot list them: no Secret items, no
+// ListSecretsMeta call, references to Secrets are not reported as missing, and Helm is still
+// detected from the labels of the objects (K20).
+func TestSkipSecrets(t *testing.T) {
+	src := loadFake(t)
+	snap, err := Collect(context.Background(), src, Options{Context: "lab", ToolVersion: "test", CRDs: true, Now: fixedNow,
+		SkipKinds: []string{"core/Secret"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := src.secretCalls.Load(); n != 0 {
+		t.Errorf("ListSecretsMeta called %d times", n)
+	}
+	for _, r := range snap.Resources {
+		if r.Kind == "Secret" {
+			t.Errorf("Secret collected: %s", r.ID)
+		}
+		for _, ref := range toStrings(r.Facts["missing_refs"]) {
+			if strings.HasPrefix(ref, "Secret/") {
+				t.Errorf("%s: skipped Secret reported missing: %s", r.ID, ref)
+			}
+		}
+	}
+	if got := snap.Scope.SkippedKinds; len(got) != 1 || got[0] != "core/Secret" {
+		t.Errorf("skipped kinds = %v", got)
+	}
+	for _, k := range snap.Scope.Kinds {
+		if k == "core/Secret" {
+			t.Error("core/Secret listed as collected")
+		}
+	}
+	if len(snap.Errors) != 0 {
+		t.Errorf("errors: %+v", snap.Errors)
+	}
+	if m := find(t, snap, "apps/Deployment/payments/api").Manager; m != MgrHelm {
+		t.Errorf("payments/api manager without Secrets = %s, want helm from its labels", m)
+	}
+	if hasEdge(snap, "apps/Deployment/payments/api", "core/Secret/payments/api-db", RelEnvFrom) {
+		t.Error("edge to a skipped Secret")
+	}
+	// a skipped custom kind is left out the same way
+	snap, err = Collect(context.Background(), loadFake(t), Options{Context: "lab", ToolVersion: "test", CRDs: true, Now: fixedNow,
+		SkipKinds: []string{"route.openshift.io/Route"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range snap.Resources {
+		if r.Kind == "Route" {
+			t.Errorf("Route collected: %s", r.ID)
+		}
+	}
+	if got := snap.Scope.SkippedKinds; len(got) != 1 || got[0] != "route.openshift.io/Route" {
+		t.Errorf("skipped kinds = %v", got)
+	}
+	if _, err := Collect(context.Background(), loadFake(t), Options{SkipKinds: []string{"a/b/c"}}); err == nil {
+		t.Error("bad --skip-kinds entry accepted")
+	}
+}
+
+// An unknown tool keeps its raw field manager name (manager_raw), volatile, for the page's list
+// of what "other" holds (K15).
+func TestManagerRaw(t *testing.T) {
+	src := smallSource(map[APIResource][]unstructured.Unstructured{
+		resourceOf["apps/Deployment"]: {obj("apps/v1", "Deployment", "ns-a", "web", "pulumi-kubernetes", nil, nil),
+			obj("apps/v1", "Deployment", "ns-a", "api", "kubectl-client-side-apply", nil, nil)},
+	})
+	snap, err := Collect(context.Background(), src, Options{Context: "lab", ToolVersion: "test", Now: fixedNow})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if web := find(t, snap, "apps/Deployment/ns-a/web"); web.Manager != MgrOther || web.Facts["manager_raw"] != "pulumi-kubernetes" {
+		t.Errorf("web: %s %v", web.Manager, web.Facts)
+	}
+	if api := find(t, snap, "apps/Deployment/ns-a/api"); api.Facts["manager_raw"] != nil {
+		t.Errorf("manager_raw on a known manager: %v", api.Facts)
+	}
+	if !Volatile("manager_raw") {
+		t.Error("manager_raw enters the fingerprint")
+	}
+}
+
+// OpenShift platform noise (K16): OLM's copies of a ClusterServiceVersion fold into the original,
+// and the cluster operator kinds are flagged as platform while keeping the crd category.
+func TestPlatformKindsAndCopiedCSVs(t *testing.T) {
+	csv := APIResource{Group: "operators.coreos.com", Version: "v1alpha1", Resource: "clusterserviceversions",
+		Kind: "ClusterServiceVersion", Namespaced: true, CRD: true}
+	arc := APIResource{Group: "apiserver.openshift.io", Version: "v1", Resource: "apirequestcounts", Kind: "APIRequestCount", CRD: true}
+	mc := APIResource{Group: "machineconfiguration.openshift.io", Version: "v1", Resource: "machineconfigs", Kind: "MachineConfig", CRD: true}
+	mcp := APIResource{Group: "machineconfiguration.openshift.io", Version: "v1", Resource: "machineconfigpools",
+		Kind: "MachineConfigPool", CRD: true}
+	copied := func(ns, name, from string) unstructured.Unstructured {
+		return obj("operators.coreos.com/v1alpha1", "ClusterServiceVersion", ns, name, "olm", map[string]string{"olm.copiedFrom": from}, nil)
+	}
+	src := smallSource(map[APIResource][]unstructured.Unstructured{
+		csv: {obj("operators.coreos.com/v1alpha1", "ClusterServiceVersion", "openshift-operators", "op.v1", "catalog", nil, nil),
+			copied("ns-a", "op.v1", "openshift-operators"), copied("openshift-gitops", "op.v1", "openshift-operators"),
+			copied("ns-a", "lost.v2", "ns-gone")},
+		arc:                           {obj("apiserver.openshift.io/v1", "APIRequestCount", "", "pods.v1", "kube-apiserver", nil, nil)},
+		mc:                            {obj("machineconfiguration.openshift.io/v1", "MachineConfig", "", "00-worker", "machine-config-operator", nil, nil)},
+		mcp:                           {obj("machineconfiguration.openshift.io/v1", "MachineConfigPool", "", "worker", "machine-config-operator", nil, nil)},
+		resourceOf["apps/Deployment"]: {obj("apps/v1", "Deployment", "ns-a", "web", "kubectl-create", nil, nil)},
+	})
+	snap, err := Collect(context.Background(), src, Options{Context: "lab", ToolVersion: "test", CRDs: true, Now: fixedNow})
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := find(t, snap, "operators.coreos.com/ClusterServiceVersion/openshift-operators/op.v1")
+	if orig.Facts["copies"] != int64(2) || orig.Platform {
+		t.Errorf("original CSV: platform %v, facts %v", orig.Platform, orig.Facts)
+	}
+	for _, r := range snap.Resources {
+		if r.Kind == "ClusterServiceVersion" && r.NS != "openshift-operators" && r.Name == "op.v1" {
+			t.Errorf("copy kept: %s", r.ID)
+		}
+	}
+	// a copy without its original stays
+	find(t, snap, "operators.coreos.com/ClusterServiceVersion/ns-a/lost.v2")
+	for _, id := range []string{"apiserver.openshift.io/APIRequestCount/_/pods.v1", "machineconfiguration.openshift.io/MachineConfig/_/00-worker",
+		"machineconfiguration.openshift.io/MachineConfigPool/_/worker"} {
+		if r := find(t, snap, id); !r.Platform || r.Cat != CatCRD {
+			t.Errorf("%s: platform %v, cat %s", id, r.Platform, r.Cat)
+		}
+	}
+	if find(t, snap, "apps/Deployment/ns-a/web").Platform {
+		t.Error("a Deployment flagged as platform")
+	}
+	if !Volatile("copies") {
+		t.Error("the number of copies enters the fingerprint")
+	}
+}
+
+// Team inference (K17): labels and annotations first, then the namespace name with
+// --team-from-ns, then openshift.io/requester unless the user is an admin or a system user.
+func TestTeamInference(t *testing.T) {
+	ns := func(name string, labels map[string]string, requester string) unstructured.Unstructured {
+		u := obj("v1", "Namespace", "", name, "kubectl-create", labels, nil)
+		if requester != "" {
+			u.SetAnnotations(map[string]string{TeamFromRequester: requester})
+		}
+		return u
+	}
+	src := smallSource(nil)
+	src.objs[schema.GroupResource{Resource: "namespaces"}] = []unstructured.Unstructured{
+		ns("team-pay-prod", nil, "user-a"),                            // the name wins over the requester
+		ns("team-web-dev", map[string]string{"team": "frontend"}, ""), // the label wins over the name
+		ns("ns-a", nil, "user-b"),
+		ns("ns-b", nil, "kube:admin"),
+		ns("ns-c", nil, "system:serviceaccount:ci:deployer"),
+		ns("ns-d", nil, "admin"),
+		ns("ns-e", nil, "svc-pipeline"),
+		ns("kube-system", nil, ""),
+	}
+	src.apis = append(src.apis, resourceOf["apps/Deployment"])
+	src.objs[schema.GroupResource{Group: "apps", Resource: "deployments"}] = []unstructured.Unstructured{
+		obj("apps/v1", "Deployment", "team-pay-prod", "api", "kubectl-create", nil, nil),
+		obj("apps/v1", "Deployment", "ns-b", "web", "kubectl-create", nil, nil),
+		obj("apps/v1", "Deployment", "kube-system", "x", "kubectl-create", nil, nil),
+	}
+	snap, err := Collect(context.Background(), src, Options{Context: "lab", ToolVersion: "test", Now: fixedNow,
+		TeamFromNS: `^team-([a-z]+)-`, RequesterIgnore: []string{"svc-*"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][2]string{
+		"team-pay-prod": {"pay", TeamFromNamespace},
+		"team-web-dev":  {"frontend", "team"},
+		"ns-a":          {"user-b", TeamFromRequester},
+		"ns-b":          {"", ""},
+		"ns-c":          {"", ""},
+		"ns-d":          {"", ""},
+		"ns-e":          {"", ""},
+	}
+	for _, n := range snap.Namespaces {
+		if w, ok := want[n.Name]; ok && (n.Team != w[0] || n.TeamFrom != w[1]) {
+			t.Errorf("%s: team %q from %q, want %q from %q", n.Name, n.Team, n.TeamFrom, w[0], w[1])
+		}
+	}
+	if got := find(t, snap, "apps/Deployment/team-pay-prod/api").Team; got != "pay" {
+		t.Errorf("resource team = %q, want the namespace's", got)
+	}
+	if got := snap.Scope.RequesterIgnore; len(got) != 4 || got[3] != "svc-*" || snap.Scope.TeamFromNS == "" {
+		t.Errorf("scope: %+v", snap.Scope)
+	}
+	// coverage outside system namespaces: 3 of 7 namespaces, 1 of 2 resources
+	c := snap.TeamCoverage()
+	if c != (snapshot.TeamCoverage{Namespaces: 7, NamespacesWithTeam: 3, Resources: 2, ResourcesWithTeam: 1}) {
+		t.Errorf("team coverage = %+v", c)
+	}
+	for _, bad := range []string{`team-(`, `^team-[a-z]+`} {
+		if _, err := Collect(context.Background(), smallSource(nil), Options{TeamFromNS: bad}); err == nil {
+			t.Errorf("--team-from-ns %q accepted", bad)
+		}
+	}
+}
+
+func TestIgnoredRequester(t *testing.T) {
+	ignore := append(append([]string{}, DefaultRequesterIgnore...), "svc-*")
+	for user, want := range map[string]bool{
+		"kube:admin": true, "system:admin": true, "system:serviceaccount:ns-a:sa": true, "admin": true,
+		"svc-ci": true, "user-a": false, "administrator": false, "kube:admin2": false,
+	} {
+		if got := ignoredRequester(user, ignore); got != want {
+			t.Errorf("%s: ignored %v, want %v", user, got, want)
+		}
 	}
 }

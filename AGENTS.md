@@ -1,7 +1,7 @@
 ---
 type: guide
 summary: "Contrato de contexto do repo kubestrata para agentes: CLI Go (MIT) que coleta inventário somente leitura de clusters Kubernetes e gera visão HTML offline por idade (centro = recente) e comparação lado a lado para migração."
-updated: 2026-11-20
+updated: 2026-11-27
 tags: [agents, kubernetes, migration, inventory]
 ---
 
@@ -33,9 +33,9 @@ Ferramenta de domínio com repo próprio, como o `costgate`.
 | `internal/snapshot` | contrato JSON `schema_version` 1 | gzip; recusa versão maior |
 | `internal/cache` | `~/Library/Caches/kubestrata` (`KUBESTRATA_CACHE_DIR`) | `clusters/<id>/<stamp>.json.gz` + `contexts.json`; escrita atômica |
 | `internal/compare` | Go puro, determinístico | pares por `group/Kind/ns/name`: equal, drift (fatos fora do `volatile` de `collect.go`), pending, new; resumo e cobertura por namespace |
-| TUI (F1) | Bubble Tea v2, Bubbles v2, Lip Gloss v2, Huh v2 (`charm.land/*`) | a implementar |
+| TUI | — | não existe; foi do plano da 0.1 (F1) para a F3 do `docs/design.md` |
 | Site (F1) | HTML+CSS+JS inline (`web/`), zero CDN, canvas 2D, layout polar determinístico | `render` (um cluster) e `compare` (dois painéis, modo de cor `state`, tabela de cobertura); modelo de referência: `leosavio-org/knowledge/views/grafo.html` |
-| CI | GitHub Actions `.github/workflows/ci.yml` | lint (gofmt, vet incl. tag `lab`, staticcheck v0.8.2, cross-compile darwin/linux × arm64/amd64) e `go test -race`; sem job de lab (o e2e precisa do lab `kuberito`) |
+| CI | GitHub Actions `.github/workflows/ci.yml` + `lab.yml` | lint (gofmt, vet incl. tag `lab`, staticcheck v0.8.2, cross-compile darwin/linux × arm64/amd64) e `go test -race`; `lab.yml` instala o kuberito da release (versão fixada, checksum + cosign), `kuberito up --profile full`, `make lab-test` e `make page-check`, só com a variável `KUBERITO_PUBLIC=true` (o kuberito é público) |
 | Release | `.github/workflows/release.yml` (tag `v*`) | testes, binários darwin/linux × arm64/amd64, smoke do linux/amd64, `checksums.txt` assinado com cosign keyless, release no GitHub e `Formula/kubestrata.rb` no `kubestrata/homebrew-tap` (deploy key só de escrita no tap, secret `HOMEBREW_TAP_DEPLOY_KEY`; pré-release não mexe no tap) |
 | Smoke de instalação | `.github/workflows/install-smoke.yml` + `scripts/smoke-check.sh` | brew, `go install` e tarball assinado em 4 runners; disparado pelo último job do `release.yml` (`workflow_dispatch`), toda terça e à mão |
 | PyPI | job `pypi` do `release.yml` + `scripts/build-wheels.py` | wheel por plataforma com o binário do archive assinado (cosign e checksum conferidos antes); Trusted Publishing da conta `leosavio`, environments `testpypi` (tag com `-`) e `pypi` (tag final), só tags `v*` |
@@ -45,7 +45,25 @@ Design completo: `docs/design.md`.
 
 ## Estado atual (onde parei)
 
-> Última atualização: 2026-11-26 (org própria e release v0.1.0)
+> Última atualização: 2026-11-27 (teste de campo no OpenShift e revisão independente, K12–K30)
+
+Sessão 2026-11-27 (branch `feat/openshift-field-test`, um commit por item, sem push): K12
+`--redact` para OpenShift (`api.redacted`, `*.apps.redacted`, host do `oc login`, times do
+`openshift.io/requester` como `redacted-N`; `namespaces[].team_from`); K13 escalas `years`, `auto`
+e sufixo `y` (o padrão continua `30d`: no lab o `auto` espreme as ondas do destino); K14 Argo CD
+pelo `status.resources` das Applications e `cluster.argocd`; K20 `--skip-kinds`/`--no-secrets` e
+`deploy/rbac/` (testado no `kuberito-source` com token de ServiceAccount, RBAC apagado); K23 busca
+com vários valores; K25 `compare` pareia Route→HTTPRoute/Ingress e DeploymentConfig→Deployment
+(`target_id`, `translation`; no lab `auth/sso` vira drift de hosts); K30 `lab.yml` (pulado até
+`KUBERITO_PUBLIC=true`); K15 managers `kapp` e `console`; K16 CSVs copiados fundidos e categoria
+`platform`; K17 `--team-from-ns`, requester admin ignorado, cobertura de times; K21
+`--show-system`; K24 SBOM CycloneDX e attestations no `release.yml` (não exercitado); K18
+`kubestrata summary`; K19 higiene do kubeconfig no `contexts`; K22 `docs/openshift.md`; K26
+cobertura no CI e Scorecard; K27 `schemas/` (conferidos contra saídas reais) e
+`docs/compatibility.md`; K28 docs alinhadas (TUI foi para a F3); K29 `docs/roadmap.md`. Falta:
+release 0.2.0 (exercita SBOM e attestations), piloto OpenShift → EKS à mão antes da
+`1.0.0-rc.1`, decisões abertas no relatório da sessão (Ingress→HTTPRoute, totais do compare sem
+kinds `platform`, usuário do nome `oc login`, `actions/attest`).
 
 Sessão 2026-11-26: repo transferido para a org `kubestrata` (PR #8, caminho do módulo
 `github.com/kubestrata/kubestrata`). Release v0.1.0 no mesmo padrão do `costgate`: `release.yml`,
@@ -126,8 +144,10 @@ verdade-base do lab: 0 divergência, 0 vazamento.
 - [x] CI: `.github/workflows/ci.yml` (lint + test -race); primeira execução verde em 2026-11-18 (run 44340222456, `04f7c74`)
 - [x] Achados do workshop AWS: escalas 30m/1h, K1 `diff` (CLI/JSON), K2 verificado (fixture + workshop), K3, K4, K5 `--redact`, K6, K8 `--snapshot-out`
 - [ ] K1: site do `diff` (exige mudar a chave dos arquivos `data/<cluster_id>.js`); K7 custo por recurso a partir de export do Kubecost/OpenCost (fora desta rodada)
-- [ ] F1: TUI básica; teste de não vazamento sobre o site; golden de render
-- [ ] F2: parear tradução de kind (Route/Ingress → HTTPRoute) e PVs de nome gerado nas unidades de migração
+- [x] Teste de campo no OpenShift e revisão independente: K12–K30 (2026-11-27, branch `feat/openshift-field-test`)
+- [ ] Release 0.2.0; piloto OpenShift → EKS conferido à mão; `1.0.0-rc.1` (`docs/roadmap.md`)
+- [ ] F3: TUI interativa (saiu do plano da F1); teste de não vazamento sobre o site; golden de render
+- [ ] F2: Ingress → HTTPRoute no `compare` (decisão aberta), `--map-ns` e PVs de nome gerado nas unidades de migração
 - [x] CONTRIBUTING, CODE_OF_CONDUCT, SECURITY e CHANGELOG (`e8c436f`); repo público desde 2026-11-20
 - [x] v0.1.0: release (2026-11-26), Homebrew `kubestrata/tap/kubestrata`, `go install`, tarball assinado
 
@@ -144,6 +164,8 @@ bin/kubestrata render -c <ctx> --open   # site offline a partir do cache (--scal
 bin/kubestrata compare -c <origem> -c <destino> --open   # tabela de cobertura + site lado a lado
 bin/kubestrata diff -c <ctx> [--from <stamp>] [--to <stamp>]   # dois snapshots do mesmo cluster (stamps: cache ls)
 bin/kubestrata collect -c <ctx> --snapshot-out snap.json --redact   # snapshot em JSON puro, mascarado para compartilhar
+bin/kubestrata summary -c <ctx> [--format json]   # resumo de migração do snapshot mais novo
+go test ./schemas                                  # saídas JSON reais contra os JSON Schemas
 KUBESTRATA_CACHE_DIR=/tmp/ks bin/kubestrata collect -c <ctx> --force   # coleta real, cache isolado
 ```
 

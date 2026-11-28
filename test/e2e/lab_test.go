@@ -22,6 +22,7 @@ import (
 	"github.com/kubestrata/kubestrata/internal/kube"
 	"github.com/kubestrata/kubestrata/internal/render"
 	"github.com/kubestrata/kubestrata/internal/snapshot"
+	"github.com/kubestrata/kubestrata/schemas"
 )
 
 // Values the lab seeds on purpose; none may reach a snapshot.
@@ -166,6 +167,25 @@ func TestLabCompare(t *testing.T) {
 	if _, ok := diff(search, "replicas"); search.State != compare.Drift || !ok {
 		t.Errorf("catalog/search: %+v, want drift on replicas", search)
 	}
+	// kind translation: the target serves the OpenShift Route auth/sso with an HTTPRoute of the
+	// same name. The pair drifts only on its hosts (the target's domain): TLS (edge termination,
+	// the Gateway's HTTPS listener), path and backend Service stay the same.
+	sso := state("route.openshift.io/Route/auth/sso")
+	if sso.Translation != "Route→HTTPRoute" || sso.TargetID != "gateway.networking.k8s.io/HTTPRoute/auth/sso" ||
+		sso.State != compare.Drift {
+		t.Errorf("auth/sso: %+v, want the Route paired with the HTTPRoute, drift", sso)
+	} else if d, ok := diff(sso, "hosts"); !ok || len(sso.Diff) != 1 {
+		t.Errorf("auth/sso diff %+v, want hosts only", sso.Diff)
+	} else {
+		t.Logf("auth/sso: Route→HTTPRoute, hosts %v → %v", d.Source, d.Target)
+	}
+	translations := map[string]int{}
+	for _, it := range res.Items {
+		if it.Translation != "" {
+			translations[it.Translation]++
+		}
+	}
+	t.Logf("kind translations: %v (the lab migrates no DeploymentConfig)", translations)
 	for _, id := range []string{"apps/Deployment/payments/fraud", "apps/Deployment/catalog/recs"} {
 		if st := state(id).State; st != compare.New {
 			t.Errorf("%s: %q, want new", id, st)
@@ -189,7 +209,8 @@ func TestLabCompare(t *testing.T) {
 
 	// Waves 1-3 were migrated, so the source has them. A kind translation is the exception: the
 	// target exposes the app with a Gateway API HTTPRoute where the source had an OpenShift Route
-	// or an Ingress. The identity key holds group/Kind, so the pair shows as pending + new.
+	// or an Ingress. A Route pairs with its HTTPRoute (equal or drift, found by the target id); an
+	// Ingress does not, so that pair shows as pending + new.
 	waves := map[string]int{}
 	for _, o := range tt.Objects {
 		kind := strings.SplitN(o.ID, "/", 3)[1]
@@ -236,6 +257,16 @@ func TestLabCompare(t *testing.T) {
 	var doc compare.Result
 	if err := json.Unmarshal(b, &doc); err != nil || doc.SchemaVersion != 1 || len(doc.Items) != len(res.Items) {
 		t.Fatalf("json/compare.json: schema %d, %d items, err %v", doc.SchemaVersion, len(doc.Items), err)
+	}
+	// the real documents of the lab match the published schemas
+	if err := schemas.Check("compare", b); err != nil {
+		t.Error(err)
+	}
+	for _, s := range []*snapshot.Snapshot{src, tgt} {
+		raw, _ := json.Marshal(s)
+		if err := schemas.Check("snapshot", raw); err != nil {
+			t.Errorf("%s: %v", s.Cluster.Context, err)
+		}
 	}
 }
 

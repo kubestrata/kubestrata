@@ -20,7 +20,7 @@ button.on { background: var(--accent); color: var(--bg); border-color: var(--acc
 .chip.off { opacity: .45; }
 .chip .n { color: var(--muted); font-size: 11px; }
 .chip.on .n { color: var(--bg); }
-input[type=search] { width: 200px; }
+input[type=search] { width: 320px; }
 main { position: relative; display: grid; grid-template-columns: 1fr 360px; grid-template-rows: minmax(0, 1fr) auto;
   min-height: 0; }
 main.nopanel { grid-template-columns: 1fr 0; }
@@ -51,6 +51,7 @@ aside table.two td:first-child { width: 28%; }
 aside table.two td { width: 36%; padding-right: 8px; word-break: normal; overflow-wrap: anywhere; }
 aside tr.hd td { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
 aside td.diff { color: var(--warn); }
+aside .translation { color: var(--accent); margin: 4px 0 6px; }
 .state { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
 .state i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
 #coverage { display: none; grid-column: 1; grid-row: 2; max-height: 32vh; overflow: auto; padding: 6px 14px 8px;

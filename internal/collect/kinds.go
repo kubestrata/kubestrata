@@ -70,6 +70,28 @@ func specFor(group, resource string) (kindSpec, bool) {
 	return kindSpec{}, false
 }
 
+// platformGroups serve the configuration and state of OpenShift's own cluster operators, which the
+// cluster version operator installs and the target platform replaces: machine configuration and
+// the Machine API, cluster-wide config.openshift.io settings, the operator configs of
+// operator.openshift.io and of the per-operator groups, API request counts, console
+// customizations. Their custom resources get Platform.
+var platformGroups = map[string]bool{
+	"apiserver.openshift.io":              true, // APIRequestCount
+	"machineconfiguration.openshift.io":   true, // MachineConfig, MachineConfigPool, KubeletConfig, ...
+	"config.openshift.io":                 true, // ClusterVersion, ClusterOperator, Infrastructure, ...
+	"operator.openshift.io":               true, // IngressController, Network, Etcd, KubeAPIServer, ...
+	"controlplane.operator.openshift.io":  true, // PodNetworkConnectivityCheck
+	"imageregistry.operator.openshift.io": true,
+	"samples.operator.openshift.io":       true,
+	"ingress.operator.openshift.io":       true, // DNSRecord
+	"network.operator.openshift.io":       true,
+	"machine.openshift.io":                true, // Machine, MachineSet, MachineHealthCheck
+	"autoscaling.openshift.io":            true, // ClusterAutoscaler, MachineAutoscaler
+	"tuned.openshift.io":                  true,
+	"cloudcredential.openshift.io":        true, // CredentialsRequest
+	"console.openshift.io":                true, // ConsoleLink, ConsolePlugin, ...
+}
+
 // noiseConfigMaps are created by the control plane in every namespace.
 var noiseConfigMaps = map[string]bool{"kube-root-ca.crt": true, "openshift-service-ca.crt": true}
 
@@ -80,3 +102,14 @@ const DefaultSystemNS = `^(kube-system|kube-public|kube-node-lease|local-path-st
 // DefaultTeamKeys are looked up, in order, in resource labels and then namespace labels and
 // annotations. openshift.io/requester (set on OpenShift projects) is the last fallback.
 var DefaultTeamKeys = []string{"team", "owner", "app.kubernetes.io/part-of"}
+
+// TeamFromRequester is the namespace annotation OpenShift sets to the user who requested the
+// project. A team taken from it is a user name: --redact masks it.
+const TeamFromRequester = "openshift.io/requester"
+
+// TeamFromNamespace is the team_from of a team taken from the namespace name (--team-from-ns).
+const TeamFromNamespace = "namespace-name"
+
+// DefaultRequesterIgnore are requesters that name no team: the OpenShift bootstrap admin, the
+// system users and service accounts, and a plain admin. A trailing * matches a prefix.
+var DefaultRequesterIgnore = []string{"kube:admin", "system:*", "admin"}

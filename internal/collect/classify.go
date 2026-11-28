@@ -6,6 +6,8 @@ import (
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/kubestrata/kubestrata/internal/snapshot"
 )
 
 // Managers: how an object got into the cluster. Drives the migration path.
@@ -17,9 +19,59 @@ const (
 	MgrKubectl   = "kubectl"
 	MgrOperator  = "operator"
 	MgrPlatform  = "platform" // the cluster's own control plane and managed add-ons
+	MgrKapp      = "kapp"     // Carvel kapp (also behind kapp-controller Apps)
+	MgrConsole   = "console"  // edited in a web console (the field manager is a browser user agent)
 	MgrOther     = "other"
 	MgrUnknown   = "unknown"
 )
+
+// argoGroup is the API group of Argo CD.
+const argoGroup = "argoproj.io"
+
+// attributeArgoCD gives the manager argocd to every resource listed in the status.resources of a
+// local Argo CD Application, whatever tracking method (label, annotation) the instance uses, and
+// summarizes the result. An Application that deploys to another cluster lists objects of that
+// cluster: it is counted as remote and its status is not used.
+func attributeArgoCD(res []snapshot.Resource, lists []listed) *snapshot.ArgoCD {
+	out := &snapshot.ArgoCD{}
+	managed := map[string]bool{}
+	for _, l := range lists {
+		if l.api.Group != argoGroup || l.api.Kind != "Application" {
+			continue
+		}
+		for _, u := range l.objs {
+			out.Applications++
+			if !localDestination(m(path(u.Object, "spec", "destination"))) {
+				out.Remote++
+				continue
+			}
+			for _, r := range sl(path(u.Object, "status", "resources")) {
+				rm := m(r)
+				if name := s(rm["name"]); name != "" {
+					managed[snapshot.ID(s(rm["group"]), s(rm["kind"]), s(rm["namespace"]), name)] = true
+				}
+			}
+		}
+	}
+	for i := range res {
+		r := &res[i]
+		if managed[r.ID] && r.Manager != MgrArgoCD {
+			r.Manager = MgrArgoCD
+			delete(r.Facts, "manager_raw")
+			out.FromStatus++
+		}
+		if r.Manager == MgrArgoCD {
+			out.Managed++
+		}
+	}
+	return out
+}
+
+// localDestination reports whether an Application destination is the cluster Argo CD runs in.
+func localDestination(dest map[string]any) bool {
+	server, name := strings.TrimSuffix(s(dest["server"]), "/"), s(dest["name"])
+	return server == "https://kubernetes.default.svc" || (server == "" && (name == "" || name == "in-cluster"))
+}
 
 // classifyManager prefers explicit labels and annotations, then the creating field manager.
 func classifyManager(labels, ann map[string]string, mf []metav1.ManagedFieldsEntry, ownedByCR bool) (string, []string) {
@@ -29,6 +81,8 @@ func classifyManager(labels, ann map[string]string, mf []metav1.ManagedFieldsEnt
 		return MgrArgoCD, names
 	case hasPrefixKey(labels, "kustomize.toolkit.fluxcd.io/") || hasPrefixKey(labels, "helm.toolkit.fluxcd.io/"):
 		return MgrFlux, names
+	case labels["kapp.k14s.io/app"] != "":
+		return MgrKapp, names
 	case strings.EqualFold(labels["app.kubernetes.io/managed-by"], "helm") || ann["meta.helm.sh/release-name"] != "":
 		return MgrHelm, names
 	case ownedByCR:
@@ -55,6 +109,12 @@ func mapManager(m string) string {
 		return MgrTerraform
 	case strings.HasPrefix(l, "kubectl"):
 		return MgrKubectl
+	case l == "kapp" || l == "kapp-controller":
+		return MgrKapp
+	// the API server names the field manager after the user agent up to the first slash: an edit
+	// in the OpenShift or another web console arrives as "Mozilla"
+	case strings.HasPrefix(m, "Mozilla"):
+		return MgrConsole
 	case platformManagers[m]:
 		return MgrPlatform
 	}
@@ -143,14 +203,20 @@ func appOf(labels, ann map[string]string) string {
 }
 
 func teamOf(keys []string, maps ...map[string]string) string {
+	v, _ := teamFrom(keys, maps...)
+	return v
+}
+
+// teamFrom returns the first team value found, in key order within each map, and its key.
+func teamFrom(keys []string, maps ...map[string]string) (string, string) {
 	for _, m := range maps {
 		for _, k := range keys {
 			if v := m[k]; v != "" {
-				return v
+				return v, k
 			}
 		}
 	}
-	return ""
+	return "", ""
 }
 
 func hasPrefixKey(m map[string]string, prefix string) bool {

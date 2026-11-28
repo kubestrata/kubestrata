@@ -23,16 +23,21 @@
     }
   }
 
-  var CATS = ["workload", "network", "config", "storage", "policy", "crd"];
+  // platform: custom resources of the cluster platform (OpenShift cluster operators, r.platform),
+  // hidden until switched on
+  var CATS = ["workload", "network", "config", "storage", "policy", "crd", "platform"];
   var CAT_COLOR = { workload: "#4fc3f7", network: "#ba68c8", config: "#ffd54f", storage: "#81c784",
-    policy: "#ff8a65", crd: "#90a4ae" };
-  var MGR = ["argocd", "flux", "helm", "terraform", "operator", "kubectl", "platform", "other", "unknown"];
-  var MGR_COLOR = { argocd: "#ff9800", flux: "#5c6bc0", helm: "#26a69a", terraform: "#c0ca33", operator: "#ab47bc",
-    kubectl: "#ef5350", platform: "#8d6e63", other: "#9e9e9e", unknown: "#616161" };
+    policy: "#ff8a65", crd: "#90a4ae", platform: "#8d6e63" };
+  var CAT_OFF = { platform: true };
+  var MGR = ["argocd", "flux", "helm", "kapp", "terraform", "operator", "kubectl", "console", "platform", "other", "unknown"];
+  var MGR_COLOR = { argocd: "#ff9800", flux: "#5c6bc0", helm: "#26a69a", kapp: "#00acc1", terraform: "#c0ca33",
+    operator: "#ab47bc", kubectl: "#ef5350", console: "#ec407a", platform: "#8d6e63", other: "#9e9e9e", unknown: "#616161" };
   var MGR_HINT = { argocd: "GitOps: re-target the destination", flux: "GitOps: re-target the destination",
     helm: "reinstall the release in the target", terraform: "IaC: re-target the Terraform code to the new cluster",
+    kapp: "Carvel kapp: deploy the same kapp app (or kapp-controller App) to the target",
     operator: "migrate the custom resource, not its children",
     kubectl: "applied by hand: export, clean, move to Git",
+    console: "edited in a web console: a manual change, review and codify it before migrating",
     platform: "created by the cluster platform: recreated by the target platform, do not migrate",
     other: "unknown tool: check managedFields", unknown: "no manager data" };
   // a volume the platform provisioned holds data: the target recreates the object, the data must move
@@ -50,13 +55,23 @@
     "#7986cb", "#a1887f", "#90a4ae", "#dce775"];
   var DAY = 86400000, CAP = 1095, RR_MIN = 0.05;
   var ITEM = {};
-  if (CMP) CMP.items.forEach(function (it) { ITEM[it.id] = it; });
+  // a kind translation (Route→HTTPRoute, DeploymentConfig→Deployment) is one item under both ids
+  if (CMP) CMP.items.forEach(function (it) { ITEM[it.id] = it; if (it.target_id) ITEM[it.target_id] = it; });
+  // identity of a resource: the source id of its translation pair, else its own id
+  function keyOf(id) { return ITEM[id] ? ITEM[id].id : id; }
+  // id of the same identity in a model: the pair's other side when the model has not this one
+  function idIn(m, id) {
+    if (!id || m.byId[id]) return id;
+    var it = ITEM[id];
+    if (!it || !it.target_id) return id;
+    return m.byId[it.id] ? it.id : it.target_id;
+  }
 
   // ---- state (initial values from the config, then from the URL hash)
   // ns: namespace filter ("_" = cluster-scoped), exact match on the resource namespace; q: free-text search
-  var st = { scale: CFG.scale || "30d", axis: CFG.axis || "created", color: COMPARE ? "state" : "cat", system: false,
+  var st = { scale: CFG.scale || "30d", axis: CFG.axis || "created", color: COMPARE ? "state" : "cat", system: !!CFG.show_system,
     ns: "", q: "", sel: null, cats: {}, cluster: (CFG.clusters || [])[0] };
-  CATS.forEach(function (c) { st.cats[c] = true; });
+  CATS.forEach(function (c) { st.cats[c] = !CAT_OFF[c]; });
   (function () {
     var h = location.hash.replace(/^#/, "").split("&");
     h.forEach(function (kv) {
@@ -67,16 +82,19 @@
       if (k === "sel") st.sel = v;
       if (k === "q") st.q = v;
       if (k === "hide") v.split(",").forEach(function (c) { if (c) st.cats[c] = false; });
+      if (k === "show") v.split(",").forEach(function (c) { if (c && CATS.indexOf(c) >= 0) st.cats[c] = true; });
     });
     if (st.color === "state" && !COMPARE) st.color = "cat";
   })();
   function saveHash() {
     var parts = ["scale=" + st.scale, "axis=" + st.axis, "color=" + st.color];
     if (!COMPARE && (CFG.clusters || []).length > 1) parts.push("cluster=" + encodeURIComponent(st.cluster));
-    if (st.system) parts.push("system=1");
+    if (st.system !== !!CFG.show_system) parts.push("system=" + (st.system ? "1" : "0"));
     if (st.ns) parts.push("ns=" + encodeURIComponent(st.ns));
-    var hide = CATS.filter(function (c) { return !st.cats[c]; });
+    var hide = CATS.filter(function (c) { return !st.cats[c] && !CAT_OFF[c]; });
     if (hide.length) parts.push("hide=" + hide.join(","));
+    var show = CATS.filter(function (c) { return st.cats[c] && CAT_OFF[c]; });
+    if (show.length) parts.push("show=" + show.join(","));
     if (st.q) parts.push("q=" + encodeURIComponent(st.q));
     if (st.sel) parts.push("sel=" + encodeURIComponent(st.sel));
     history.replaceState(null, "", "#" + parts.join("&"));
@@ -110,20 +128,46 @@
     if (d < 730) return Math.round(d / 30.4) + " months";
     return (d / 365).toFixed(1) + " years";
   }
-  // ring label of an age in days: 30m, 1h30m, 6h, 36h, 5d, 1y
+  // ring label of an age in days: 30m, 1h30m, 6h, 36h, 5d, 1y, 1.5y
   function ringLabel(d) {
-    var min = Math.round(d * 1440);
+    var min = Math.round(d * 1440), year = 525600;
     if (min < 60) return min + "m";
+    if (min >= year && (min * 2) % year === 0) return (min / year) + "y";
     if (min % 1440) return Math.floor(min / 60) + "h" + (min % 60 ? (min % 60) + "m" : "");
     var days = min / 1440;
     return days >= 365 && days % 365 === 0 ? (days / 365) + "y" : days + "d";
   }
   function pct(c) { return c === null || c === undefined ? "—" : Math.round(c * 100) + "%"; }
+  // namespaces and resources with a team, outside system namespaces (the CLI counts the same)
+  function teamCoverage(s) {
+    var sys = {}, ns = 0, nsT = 0, res = 0, resT = 0;
+    (s.namespaces || []).forEach(function (n) {
+      sys[n.name] = !!n.system;
+      if (!n.system) { ns++; if (n.team) nsT++; }
+    });
+    (s.resources || []).forEach(function (r) {
+      if (!r.ns || sys[r.ns]) return;
+      res++;
+      if (r.team) resT++;
+    });
+    return nsT + " of " + ns + " namespaces, " + resT + " of " + res + " resources" +
+      (res ? " (" + Math.round(resT * 100 / res) + "%)" : "");
+  }
+  // cluster.argocd: what Argo CD manages; managed 0 means installed, nothing attributed
+  function argoText(a) {
+    var apps = a.applications + " Application" + (a.applications === 1 ? "" : "s") +
+      (a.remote ? ", " + a.remote + " deploying to other clusters" : "");
+    if (!a.managed) return "installed, no managed objects found (" + apps + ")";
+    return a.managed + " objects managed" + (a.from_status ? ", " + a.from_status + " found only in Application status" : "") +
+      " (" + apps + ")";
+  }
   // {"c6a.xlarge": 3, "m6a.large": 1} → "c6a.xlarge: 3, m6a.large: 1"
   function counts(o) { return Object.keys(o).sort().map(function (k) { return k + ": " + o[k]; }).join(", "); }
 
   // ---- ring scales: rr(age) in [RR_MIN, 1]; the band past the last ring is compressed (log)
-  var SCALES = ["30m", "1h", "5d", "10d", "30d", "log"];
+  var SCALES = ["30m", "1h", "5d", "10d", "30d", "years", "log", "auto"];
+  // years: for long-lived clusters, where most resources are older than a year
+  var YEARS = [30, 90, 180, 365, 730, 1095, 1460, 1825, 2555, 3650];
   // ring step of a linear scale ("30m", "1h", "5d") in days; 0 when the name is not one
   function stepOf(name) {
     var p = /^(\d+)([mhd])$/.exec(name || "");
@@ -140,8 +184,14 @@
         }
       };
     }
+    var auto = CFG.auto_ring_minutes && CFG.auto_ring_minutes[st.axis];
     if (name === "custom" && CFG.ring_minutes && CFG.ring_minutes.length) {
       rings = CFG.ring_minutes.map(function (m) { return m / 1440; });
+    } else if (name === "years") {
+      rings = YEARS.slice();
+    } else if (name === "auto" && auto && auto.length) {
+      // computed by kubestrata at quantiles of the resource ages of this view, per axis
+      rings = auto.map(function (m) { return m / 1440; });
     } else {
       var step = stepOf(name) || 30;
       rings = [];
@@ -193,7 +243,7 @@
     (snap.namespaces || []).forEach(function (n) { ns[n.name] = n; });
     var byId = {}, out = {}, inn = {};
     var nodes = (snap.resources || []).map(function (r) {
-      var n = { r: r, id: r.id, cat: CATS.indexOf(r.cat) >= 0 ? r.cat : "crd", ns: r.ns || "_",
+      var n = { r: r, id: r.id, cat: r.platform ? "platform" : CATS.indexOf(r.cat) >= 0 ? r.cat : "crd", ns: r.ns || "_",
         h1: fnv(r.id), h2: fnv(r.id + "#") };
       var nsInfo = ns[n.ns];
       n.system = !!(nsInfo && nsInfo.system);
@@ -232,7 +282,56 @@
     var t = st.axis === "changed" && n.changed ? n.changed : n.created;
     return Math.max(0, (m.ref - t) / DAY);
   }
-  function matches(n) { return !st.q || n.text.indexOf(st.q.toLowerCase()) >= 0; }
+  // ---- search (q): terms split on commas and spaces, "quoted text" is one term. Free terms match
+  // anywhere in the resource text (id, name, kind, app, team, manager, labels, facts) and any of
+  // them is enough (OR); ns:, kind:, team:, mgr: and name: match that field exactly, * as a
+  // wildcard, OR within a field and AND across fields; -term excludes what it matches. One term
+  // reads as before: a substring of the text.
+  var FIELDS = { ns: true, kind: true, team: true, mgr: true, name: true };
+  var query = null, queryText = null;
+  function parseQuery(q) {
+    var out = { any: [], fields: {}, not: [], empty: true }, re = /(-?)(?:([A-Za-z]+):)?(?:"([^"]*)"?|([^\s,"]+))/g, mt;
+    while ((mt = re.exec(q)) !== null) {
+      var f = mt[2] ? mt[2].toLowerCase() : "", v = mt[3] !== undefined ? mt[3] : mt[4] || "";
+      if (f && !FIELDS[f]) { v = mt[2] + ":" + v; f = ""; } // an image tag or a label, not a field
+      v = v.toLowerCase();
+      if (!v || (!mt[1] && !f && v === "-")) continue; // a lone - while typing -term
+      var t = { f: f, v: v, glob: f && v.indexOf("*") >= 0 ? globRE(v) : null };
+      out.empty = false;
+      if (mt[1]) out.not.push(t);
+      else if (f) (out.fields[f] = out.fields[f] || []).push(t);
+      else out.any.push(t);
+    }
+    return out;
+  }
+  function globRE(v) {
+    return new RegExp("^" + v.split("*").map(function (p) { return p.replace(/[.+?^${}()|[\]\\]/g, "\\$&"); }).join(".*") + "$");
+  }
+  function fieldOf(n, f) {
+    switch (f) {
+      case "ns": return n.ns;
+      case "kind": return n.r.kind;
+      case "team": return n.team;
+      case "mgr": return n.r.manager;
+      default: return n.r.name;
+    }
+  }
+  function termHits(n, t) {
+    if (!t.f) return n.text.indexOf(t.v) >= 0;
+    var v = String(fieldOf(n, t.f) || "").toLowerCase();
+    return t.glob ? t.glob.test(v) : v === t.v;
+  }
+  function matches(n) {
+    if (!st.q) return true;
+    if (queryText !== st.q) { query = parseQuery(st.q); queryText = st.q; }
+    var q = query;
+    if (q.empty) return true;
+    for (var i = 0; i < q.not.length; i++) if (termHits(n, q.not[i])) return false;
+    if (q.any.length && !q.any.some(function (t) { return termHits(n, t); })) return false;
+    return Object.keys(q.fields).every(function (f) {
+      return q.fields[f].some(function (t) { return termHits(n, t); });
+    });
+  }
   function stateOf(id) { return ITEM[id] ? ITEM[id].state : ""; }
   function colorOf(m, n) {
     if (st.color === "state") return STATE_COLOR[stateOf(n.id)] || "#616161";
@@ -245,8 +344,8 @@
     var seen = {}, c = { equal: 0, drift: 0, pending: 0, "new": 0 };
     panes.forEach(function (p) {
       model(p.cluster).nodes.forEach(function (n) {
-        if (!visible(n) || seen[n.id]) return;
-        seen[n.id] = true;
+        if (!visible(n) || seen[keyOf(n.id)]) return;
+        seen[keyOf(n.id)] = true;
         var s = stateOf(n.id);
         if (s) c[s]++;
       });
@@ -391,7 +490,7 @@
       }
     });
     // edges of the focused node
-    var fid = hov || st.sel;
+    var fid = idIn(m, hov || st.sel);
     var focus = (fid && m.byId[fid]) || null;
     var at = {};
     p.pos.forEach(function (q) { q.x = q.rr * R * Math.cos(q.a); q.y = q.rr * R * Math.sin(q.a); at[q.n.id] = q; });
@@ -488,13 +587,13 @@
     t.appendChild(el("b", null, n.r.kind + " " + (n.r.ns ? n.r.ns + "/" : "") + n.r.name));
     if (COMPARE) {
       ["source", "target"].forEach(function (label, i) {
-        var mi = model(panes[i].cluster), x = mi.byId[n.id];
-        if (x) t.appendChild(el("span", { class: "ln" }, label + ": " + ageText(ageOf(mi, x)) + " · " + x.r.manager));
+        var mi = model(panes[i].cluster), x = mi.byId[idIn(mi, n.id)];
+        if (x) t.appendChild(el("span", { class: "ln" }, label + ": " + x.r.kind + " · " + ageText(ageOf(mi, x)) + " · " + x.r.manager));
       });
       var it = ITEM[n.id];
       if (it) {
-        var s = el("span", { class: "ln" }, it.state + (it.diff && it.diff.length ? ": " +
-          it.diff.map(function (d) { return d.fact; }).join(", ") : ""));
+        var s = el("span", { class: "ln" }, it.state + (it.translation ? " (" + it.translation + ")" : "") +
+          (it.diff && it.diff.length ? ": " + it.diff.map(function (d) { return d.fact; }).join(", ") : ""));
         s.style.color = STATE_COLOR[it.state];
         t.appendChild(s);
       }
@@ -554,13 +653,24 @@
       if (c.nodes && c.nodes.instance_types) row(t, "instance types", counts(c.nodes.instance_types));
       if (c.nodes && c.nodes.capacity_types) row(t, "capacity types", counts(c.nodes.capacity_types));
       if (c.distro_signals && c.distro_signals.length) row(t, "distro signals", c.distro_signals);
+      if (c.argocd) row(t, "argo cd", argoText(c.argocd), c.argocd.managed ? null : "eol");
       row(t, "resources", s.resources.length);
       row(t, "edges", (s.edges || []).length);
+      row(t, "team coverage", teamCoverage(s) + ", system namespaces excluded");
+      if (skippedOf(s).length) row(t, "skipped kinds", skippedOf(s).join(", ") + " (collect --skip-kinds, --no-secrets)", "eol");
       box.appendChild(t);
       box.appendChild(el("h3", null, "managers"));
-      var mt = el("table"), mc = {};
-      m.nodes.forEach(function (x) { if (visible(x)) mc[x.r.manager] = (mc[x.r.manager] || 0) + 1; });
+      var mt = el("table"), mc = {}, raw = {};
+      m.nodes.forEach(function (x) {
+        if (!visible(x)) return;
+        mc[x.r.manager] = (mc[x.r.manager] || 0) + 1;
+        var rn = x.r.manager === "other" && x.r.facts && x.r.facts.manager_raw;
+        if (rn) raw[rn] = (raw[rn] || 0) + 1;
+      });
       MGR.forEach(function (k) { if (mc[k]) row(mt, k + " (" + mc[k] + ")", MGR_HINT[k]); });
+      // the tools behind "other", by the field manager that created the objects
+      var top = Object.keys(raw).sort(function (a, b) { return raw[b] - raw[a] || (a < b ? -1 : 1); }).slice(0, 5);
+      if (top.length) row(mt, "other, top field managers", top.map(function (k) { return k + " (" + raw[k] + ")"; }).join(", "));
       box.appendChild(mt);
       errors(box, s, "collection errors");
       box.appendChild(el("p", { class: "empty" }, "Click a resource for details. Drag to pan, scroll to zoom, double-click to reset."));
@@ -598,6 +708,8 @@
       box.appendChild(lt);
     }
   }
+  // kinds the collection left out on purpose (collect --skip-kinds, --no-secrets)
+  function skippedOf(s) { return (s.scope && s.scope.skipped_kinds) || []; }
   function errors(box, s, title) {
     if (!(s.errors || []).length) return;
     box.appendChild(el("h3", null, title));
@@ -626,7 +738,7 @@
     var box = $("panel");
     box.textContent = "";
     var ms = panes.map(function (p) { return model(p.cluster); });
-    var a = st.sel && ms[0].byId[st.sel], b = st.sel && ms[1].byId[st.sel];
+    var a = st.sel && ms[0].byId[idIn(ms[0], st.sel)], b = st.sel && ms[1].byId[idIn(ms[1], st.sel)];
     if (!a && !b) {
       var sa = ms[0].snap, sb = ms[1].snap, ca = sa.cluster, cb = sb.cluster;
       box.appendChild(el("h2", null, ca.context + " → " + cb.context));
@@ -640,7 +752,12 @@
         var a = ca.nodes && ca.nodes[k], b = cb.nodes && cb.nodes[k];
         if (a || b) row3(t, k.replace("_", " "), a && counts(a), b && counts(b));
       });
+      if (ca.argocd || cb.argocd) row3(t, "argo cd", ca.argocd && argoText(ca.argocd), cb.argocd && argoText(cb.argocd));
       row3(t, "resources", sa.resources.length, sb.resources.length);
+      row3(t, "team coverage", teamCoverage(sa), teamCoverage(sb));
+      if (skippedOf(sa).length || skippedOf(sb).length) {
+        row3(t, "skipped kinds", skippedOf(sa).join(", ") || "—", skippedOf(sb).join(", ") || "—", "eol");
+      }
       box.appendChild(t);
       box.appendChild(el("h3", null, "states (shown resources)"));
       var c = stateCounts();
@@ -658,6 +775,12 @@
     box.appendChild(el("h2", null, r.kind + " " + r.name));
     box.appendChild(el("div", { class: "sub" }, r.id));
     box.appendChild(stateLine(it.state, it.state + " — " + STATE_HINT[it.state]));
+    if (it.translation) {
+      var tr = el("div", { class: "translation" }, "kind translation " + it.translation + ": the target serves " +
+        it.id.split("/").slice(1).join("/") + " as " + it.target_id.split("/").slice(1).join("/") +
+        "; compared on the facts both kinds express");
+      box.appendChild(tr);
+    }
     var ra = a ? a.r : {}, rb = b ? b.r : {};
     var t2 = table3();
     row3(t2, "namespace", a && (ra.ns || "(cluster-scoped)"), b && (rb.ns || "(cluster-scoped)"));
@@ -795,7 +918,7 @@
     // each identity counted once over the panes
     panes.forEach(function (p) {
       model(p.cluster).nodes.forEach(function (x) {
-        if ((st.system || !x.system) && (!st.ns || x.ns === st.ns) && !cat[x.id]) cat[x.id] = x.cat;
+        if ((st.system || !x.system) && (!st.ns || x.ns === st.ns) && !cat[keyOf(x.id)]) cat[keyOf(x.id)] = x.cat;
       });
     });
     box.textContent = "";
@@ -803,6 +926,7 @@
       var n = Object.keys(cat).filter(function (id) { return cat[id] === c; }).length;
       if (!n) return;
       var b = el("button", { class: "chip" + (st.cats[c] ? " on" : " off") });
+      if (c === "platform") b.title = "custom resources of the cluster platform (OpenShift cluster operators): hidden by default";
       var dot = el("i"); dot.style.background = CAT_COLOR[c];
       b.appendChild(dot); b.appendChild(document.createTextNode(c)); b.appendChild(el("span", { class: "n" }, String(n)));
       b.addEventListener("click", function () { st.cats[c] = !st.cats[c]; refresh(); });
@@ -837,12 +961,13 @@
     var seen = {}, hit = {}, hits = 0, shown = 0;
     panes.forEach(function (p) {
       p.pos.forEach(function (o) {
-        var id = o.n.id;
+        var id = keyOf(o.n.id);
         if (!seen[id]) { seen[id] = true; shown++; }
         if (st.q && !hit[id] && matches(o.n)) { hit[id] = true; hits++; }
       });
     });
     var match = st.q ? " · " + hits + " match" : "";
+    if (st.q) body.setAttribute("data-match", String(hits)); else body.removeAttribute("data-match");
     if (COMPARE) {
       var sa = model(panes[0].cluster).snap, sb = model(panes[1].cluster).snap, c = stateCounts();
       var errs = (sa.errors || []).length + (sb.errors || []).length;

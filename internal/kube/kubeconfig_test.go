@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
 func TestLoadContexts(t *testing.T) {
@@ -17,9 +19,9 @@ func TestLoadContexts(t *testing.T) {
 	want := []Context{
 		{Name: "dangling", Cluster: "missing", User: "missing"},
 		{Name: "eks-target", Cluster: "target", Server: "https://ABCDEF.gr7.us-east-1.eks.amazonaws.com",
-			User: "eks-user", AuthExec: "aws"},
+			User: "eks-user", AuthExec: "aws", Auth: "exec"},
 		{Name: "lab-origin", Cluster: "origin", Server: "https://127.0.0.1:6443", User: "origin-admin",
-			Namespace: "payments", Current: true},
+			Namespace: "payments", Current: true, Auth: "token", InsecureSkipTLSVerify: true, StaticToken: true},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("len = %d, want %d", len(got), len(want))
@@ -47,5 +49,21 @@ func TestLoadContextsNeverLeaksCredentials(t *testing.T) {
 func TestLoadContextsMissingFile(t *testing.T) {
 	if _, _, err := LoadContexts("testdata/does-not-exist.yaml"); err == nil {
 		t.Fatal("want error for missing explicit kubeconfig")
+	}
+}
+
+func TestAuthOf(t *testing.T) {
+	for want, u := range map[string]*clientcmdapi.AuthInfo{
+		"exec":               {Exec: &clientcmdapi.ExecConfig{Command: "oc"}, Token: "x"},
+		"auth-provider":      {AuthProvider: &clientcmdapi.AuthProviderConfig{Name: "oidc"}},
+		"client-certificate": {ClientCertificateData: []byte("cert"), ClientKeyData: []byte("key")},
+		"token":              {Token: "not-a-real-token"},
+		"token-file":         {TokenFile: "/var/run/secrets/token"},
+		"basic":              {Username: "user-a", Password: "x"},
+		"":                   {},
+	} {
+		if got := authOf(u); got != want {
+			t.Errorf("%+v: auth %q, want %q", u, got, want)
+		}
 	}
 }

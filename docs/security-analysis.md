@@ -20,7 +20,10 @@ shows the alerts open right now.
 | Dependabot version updates ([`dependabot.yml`](../.github/dependabot.yml)) | newer modules (Kubernetes and `golang.org/x` grouped) and actions | weekly | opens a pull request |
 | Secret scanning and push protection | credentials committed to the repository | on every push | a push with a detected secret is rejected |
 | `go vet`, `staticcheck` ([`ci.yml`](../.github/workflows/ci.yml)) | bug patterns | every pull request, every push to `main` | yes |
+| Unit test coverage ([`ci.yml`](../.github/workflows/ci.yml)) | the share of statements the unit tests run, printed in the job summary | every pull request, every push to `main` | no: measured, no threshold yet |
+| [OpenSSF Scorecard](https://scorecard.dev) ([`scorecard.yml`](../.github/workflows/scorecard.yml)) | repository supply-chain practices: pinned dependencies, token permissions, branch protection, signed releases, SAST, ... | every push to `main`, weekly | no: results in code scanning and on the README badge |
 | [`install-smoke.yml`](../.github/workflows/install-smoke.yml) | the installed binary never prints the kubeconfig credential (`contexts` on a fixture with a token) | after every release, weekly | yes |
+| [`lab.yml`](../.github/workflows/lab.yml) | on a kuberito lab (release pinned, checksum and cosign signature verified): no seeded secret value, `last-applied-configuration` or account id in any snapshot (`TestLabNoSecretLeak`), and the pages load under their Content-Security-Policy without errors (`make page-check`) | every pull request, every push to `main`, weekly, once the variable `KUBERITO_PUBLIC` is `true` | yes |
 
 The standard-library findings depend on the Go version that builds the binary, which is the `go`
 line of [`go.mod`](../go.mod) (the release workflow reads it). A new Go advisory fails the weekly
@@ -29,11 +32,20 @@ line of [`go.mod`](../go.mod) (the release workflow reads it). A new Go advisory
 ## Supply chain
 
 - Every action is pinned to a commit SHA. Workflows default to `contents: read`; only the release
-  job (`contents: write`, `id-token: write`) and the job that starts the install smoke
-  (`actions: write`) get more.
+  job (`contents: write`, `id-token: write`, `attestations: write`), the PyPI job (`id-token:
+  write`) and the job that starts the install smoke (`actions: write`) get more.
 - Release archives are built with `CGO_ENABLED=0`, `-trimpath` and fixed archive metadata.
   `checksums.txt` is signed with cosign keyless (Sigstore, GitHub OIDC); the README shows how to
   verify an archive.
+- Releases after 0.1.4 carry GitHub artifact attestations (`actions/attest` v4.2.2): SLSA build
+  provenance for every archive of `checksums.txt`, and one
+  CycloneDX SBOM per archive (`cyclonedx-gomod` v1.12.0: the modules and the standard library of
+  that GOOS/GOARCH build), attached to the release and attested. `gh attestation verify
+  <archive> -R kubestrata/kubestrata` checks the provenance without cosign; add
+  `--predicate-type https://cyclonedx.org/bom` for the SBOM.
+- The PyPI wheels are published by Trusted Publishing with PEP 740 attestations:
+  `uvx pypi-attestations verify pypi --repository https://github.com/kubestrata/kubestrata
+  pypi:<wheel file name>` checks one.
 - The Homebrew formula pins each archive by `sha256`. The release workflow updates
   [kubestrata/homebrew-tap](https://github.com/kubestrata/homebrew-tap) with a deploy key that can
   write to that repository only.
@@ -41,7 +53,7 @@ line of [`go.mod`](../go.mod) (the release workflow reads it). A new Go advisory
 ## Repeat the checks on a release
 
 ```sh
-v=0.1.3
+v=0.1.4
 gh release download "v${v}" -R kubestrata/kubestrata -p "kubestrata_${v}_linux_amd64.tar.gz"
 tar -xzf "kubestrata_${v}_linux_amd64.tar.gz" kubestrata
 go version kubestrata                                   # Go toolchain the binary was built with
