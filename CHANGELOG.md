@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org).
 
-## Unreleased
+## 0.2.0 — 2026-11-28
 
 - `--redact` masks OpenShift values: the `<cluster>.<base domain>` part of API hosts
   (`api.redacted:6443`, `api-int.redacted`) and of every host under `apps.<cluster>.<base>` (Route,
