@@ -197,6 +197,23 @@ custom rings with unit suffixes `m`, `h`, `d` and `y`, `--rings 30m,2h,1d,7d,30d
 Coverage per namespace = (equal + drift) / resources in the source. System namespaces are left out
 of the totals.
 
+### The page
+
+The header filters by category, system namespaces, scale, axis and color; the search box (`/`)
+dims what does not match. Search syntax, the same on the render and compare pages:
+
+| Query | Matches |
+|---|---|
+| `api` | one term: anywhere in the id, name, kind, app, team, manager, labels or facts, as before |
+| `api, web` or `api web` | any of the terms (OR) |
+| `"payments api"` | the quoted text as one term |
+| `-kube` | everything except what the term matches |
+| `ns:payments kind:Deployment` | a field, exactly (`*` is a wildcard): `ns:`, `kind:`, `team:`, `mgr:`, `name:`; OR within a field, AND across fields |
+| `ns:payments,ns:checkout kind:Deployment -mgr:argocd` | Deployments of either namespace not managed by Argo CD |
+
+The state lives in the URL hash (`#scale=log&color=manager&q=kind:Route`), so a view can be
+bookmarked or shared with the site. `ns:_` matches cluster-scoped resources.
+
 ## Security
 
 - Read-only by design: the kubeconfig credentials are used, never stored or printed, and Secrets

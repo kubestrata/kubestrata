@@ -58,10 +58,17 @@ if [ -z "${id:-}" ]; then
 fi
 
 fail=0 total=0
+body() { # page hash → the <body> tag after the first draw
+  "$chrome" --headless=new --disable-gpu --window-size=1600,1000 --virtual-time-budget=4000 \
+    --dump-dom "file://$out/$1/index.html#$2" 2>/dev/null | grep -o '<body[^>]*>' | head -1 || true
+}
+attr() { # tag name → value of the attribute
+  local re="$2=\"([^\"]*)\""
+  if [[ $1 =~ $re ]]; then printf '%s' "${BASH_REMATCH[1]}"; fi
+}
 check() { # page hash [text the <body> tag must also hold] [text it must not hold]
-  local url="file://$out/$1/index.html#$2" tag want=${3:-} deny=${4:-}
-  tag=$("$chrome" --headless=new --disable-gpu --window-size=1600,1000 --virtual-time-budget=4000 \
-    --dump-dom "$url" 2>/dev/null | grep -o '<body[^>]*>' | head -1 || true)
+  local tag want=${3:-} deny=${4:-}
+  tag=$(body "$1" "$2")
   total=$((total + 1))
   if [[ $tag == *'data-status="ok"'* && $tag == *"$want"* && ( -z $deny || $tag != *"$deny"* ) ]]; then
     echo "ok    $1 #$2  ${tag#<body }"
@@ -93,6 +100,27 @@ check compare "scale=30m&sel=$id" 'data-rings="30m,1h,'
 check compare "scale=1h&axis=changed&color=manager" 'data-rings="1h,2h,'
 check compare "scale=years&color=team" 'data-rings="30d,90d,180d,1y,'
 check compare "scale=auto&sel=$id" 'data-rings="' 'data-rings="30d,60d,90d'
+check compare "q=ns:$ns%20-kind:Service&color=team" 'data-match="'
+
+# search: several terms (OR), exclusion and a field prefix, checked by the number of matching
+# resources the render page reports in data-match against data-shown
+assert() { # description condition
+  total=$((total + 1))
+  if eval "$2"; then echo "ok    search: $1"; else echo "FAIL  search: $1"; fail=$((fail + 1)); fi
+}
+matches() { attr "$(body render "$1")" data-match; }
+shown=$(attr "$(body render "")" data-shown)
+m_ns=$(matches "q=$ns"); m_other=$(matches "q=-$ns"); m_or=$(matches "q=$ns,no-such-term-$RANDOM")
+m_dep=$(matches "q=kind:Deployment"); m_svc=$(matches "q=kind:Service"); m_both=$(matches "q=kind:Deployment,kind:Service")
+m_field=$(matches "q=ns:$ns"); m_and=$(matches "q=ns:$ns%20kind:Deployment")
+echo "      search counts: shown $shown, '$ns' $m_ns, '-$ns' $m_other, '$ns,x' $m_or, kind:Deployment $m_dep," \
+  "kind:Service $m_svc, both $m_both, ns:$ns $m_field, ns:$ns kind:Deployment $m_and"
+assert "one term matches ($ns: $m_ns)" '[ "${m_ns:-0}" -gt 0 ]'
+assert "OR: any term matches ($ns,x = $m_or; kind:Deployment,kind:Service $m_both = $m_dep + $m_svc)" \
+  '[ "$m_or" = "$m_ns" ] && [ "${m_svc:-0}" -gt 0 ] && [ "$m_both" = "$((m_dep + m_svc))" ]'
+assert "exclusion is the complement (-$ns: $m_other = $shown - $m_ns)" '[ "$m_other" = "$((shown - m_ns))" ]'
+assert "a field prefix narrows, AND across fields (ns:$ns kind:Deployment $m_and <= ns:$ns $m_field, kind:Deployment $m_dep)" \
+  '[ "${m_and:-0}" -gt 0 ] && [ "$m_and" -le "$m_field" ] && [ "$m_and" -le "$m_dep" ] && [ "$m_field" -le "$m_ns" ]'
 
 echo "page-check: $((total - fail))/$total pages ok ($src -> $tgt)"
 [ "$fail" -eq 0 ]

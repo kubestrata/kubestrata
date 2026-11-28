@@ -20,7 +20,7 @@ button.on { background: var(--accent); color: var(--bg); border-color: var(--acc
 .chip.off { opacity: .45; }
 .chip .n { color: var(--muted); font-size: 11px; }
 .chip.on .n { color: var(--bg); }
-input[type=search] { width: 200px; }
+input[type=search] { width: 320px; }
 main { position: relative; display: grid; grid-template-columns: 1fr 360px; grid-template-rows: minmax(0, 1fr) auto;
   min-height: 0; }
 main.nopanel { grid-template-columns: 1fr 0; }

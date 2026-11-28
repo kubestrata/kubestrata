@@ -404,7 +404,12 @@ time do requester em toda saída (ver Mascaramento).
 
 O estado da página fica no hash da URL
 (`#scale=log&axis=changed&color=manager&ns=<namespace>&sel=<id>`), então uma visão pode virar
-favorito e ser conferida em modo headless; o `ns=` também funciona na visão de um cluster. Uma
+favorito e ser conferida em modo headless; o `ns=` também funciona na visão de um cluster. A
+busca (`q=`) separa termos por vírgula e espaço (`"texto entre aspas"` é um termo só): termos
+livres casam com o texto do recurso (id, nome, kind, app, time, manager, labels, fatos) e qualquer
+um basta; `ns:`, `kind:`, `team:`, `mgr:` e `name:` casam com o campo exato, `*` como curinga, OU
+dentro do campo e E entre campos; `-termo` exclui; um termo só é substring, como antes. Com uma busca
+ativa a página também grava `data-match` (recursos que casam, cada identidade uma vez). Uma
 Content-Security-Policy (`default-src 'none'`) mantém a página fora da rede. Depois do primeiro
 desenho a página grava `data-status`, `data-rings` (rótulos dos anéis do primeiro painel),
 `data-shown` (recursos desenhados, somados nos painéis), `data-draw-ms` e `data-total-ms` no

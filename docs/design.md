@@ -394,7 +394,12 @@ Fang v2 over Cobra for commands; Bubble Tea v2, Bubbles v2, Lip Gloss v2 and Huh
 names in every output (see Redaction).
 
 The page state lives in the URL hash (`#scale=log&axis=changed&color=manager&ns=<namespace>&sel=<id>`),
-so a view can be bookmarked and checked headless; `ns=` works in the single-cluster view too. A
+so a view can be bookmarked and checked headless; `ns=` works in the single-cluster view too. The
+search (`q=`) splits terms on commas and spaces (`"quoted text"` is one term): free terms match the
+resource text (id, name, kind, app, team, manager, labels, facts) and any of them is enough;
+`ns:`, `kind:`, `team:`, `mgr:` and `name:` match the field exactly, `*` as a wildcard, OR within a
+field and AND across fields; `-term` excludes; a single term is a substring, as before. While a
+search is active the page also writes `data-match` (matching resources, each identity once). A
 Content-Security-Policy (`default-src 'none'`) keeps the page off the network. After the first draw
 the page writes `data-status`, `data-rings` (ring labels of the first pane), `data-shown`
 (resources drawn, summed over the panes), `data-draw-ms` and `data-total-ms` on `<body>` for

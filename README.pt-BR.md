@@ -198,6 +198,24 @@ na saída):
 Cobertura por namespace = (equal + drift) / recursos na origem. Os namespaces de sistema ficam fora
 dos totais.
 
+### A página
+
+O cabeçalho filtra por categoria, namespaces de sistema, escala, eixo e cor; a busca (`/`) esmaece
+o que não casa. Sintaxe da busca, a mesma nas páginas de render e de compare:
+
+| Busca | Casa com |
+|---|---|
+| `api` | um termo: em qualquer parte do id, nome, kind, app, time, manager, labels ou fatos, como antes |
+| `api, web` ou `api web` | qualquer um dos termos (OU) |
+| `"payments api"` | o texto entre aspas como um termo só |
+| `-kube` | tudo menos o que o termo casa |
+| `ns:payments kind:Deployment` | um campo, exato (`*` é curinga): `ns:`, `kind:`, `team:`, `mgr:`, `name:`; OU dentro do campo, E entre campos |
+| `ns:payments,ns:checkout kind:Deployment -mgr:argocd` | Deployments de qualquer um dos dois namespaces que não são geridos pelo Argo CD |
+
+O estado fica no hash da URL (`#scale=log&color=manager&q=kind:Route`), então uma visão pode virar
+favorito ou ser compartilhada junto com o site. `ns:_` casa com recursos sem namespace
+(cluster-scoped).
+
 ## Segurança
 
 - Somente leitura por construção: as credenciais do kubeconfig são usadas, nunca guardadas nem

@@ -249,7 +249,56 @@
     var t = st.axis === "changed" && n.changed ? n.changed : n.created;
     return Math.max(0, (m.ref - t) / DAY);
   }
-  function matches(n) { return !st.q || n.text.indexOf(st.q.toLowerCase()) >= 0; }
+  // ---- search (q): terms split on commas and spaces, "quoted text" is one term. Free terms match
+  // anywhere in the resource text (id, name, kind, app, team, manager, labels, facts) and any of
+  // them is enough (OR); ns:, kind:, team:, mgr: and name: match that field exactly, * as a
+  // wildcard, OR within a field and AND across fields; -term excludes what it matches. One term
+  // reads as before: a substring of the text.
+  var FIELDS = { ns: true, kind: true, team: true, mgr: true, name: true };
+  var query = null, queryText = null;
+  function parseQuery(q) {
+    var out = { any: [], fields: {}, not: [], empty: true }, re = /(-?)(?:([A-Za-z]+):)?(?:"([^"]*)"?|([^\s,"]+))/g, mt;
+    while ((mt = re.exec(q)) !== null) {
+      var f = mt[2] ? mt[2].toLowerCase() : "", v = mt[3] !== undefined ? mt[3] : mt[4] || "";
+      if (f && !FIELDS[f]) { v = mt[2] + ":" + v; f = ""; } // an image tag or a label, not a field
+      v = v.toLowerCase();
+      if (!v || (!mt[1] && !f && v === "-")) continue; // a lone - while typing -term
+      var t = { f: f, v: v, glob: f && v.indexOf("*") >= 0 ? globRE(v) : null };
+      out.empty = false;
+      if (mt[1]) out.not.push(t);
+      else if (f) (out.fields[f] = out.fields[f] || []).push(t);
+      else out.any.push(t);
+    }
+    return out;
+  }
+  function globRE(v) {
+    return new RegExp("^" + v.split("*").map(function (p) { return p.replace(/[.+?^${}()|[\]\\]/g, "\\$&"); }).join(".*") + "$");
+  }
+  function fieldOf(n, f) {
+    switch (f) {
+      case "ns": return n.ns;
+      case "kind": return n.r.kind;
+      case "team": return n.team;
+      case "mgr": return n.r.manager;
+      default: return n.r.name;
+    }
+  }
+  function termHits(n, t) {
+    if (!t.f) return n.text.indexOf(t.v) >= 0;
+    var v = String(fieldOf(n, t.f) || "").toLowerCase();
+    return t.glob ? t.glob.test(v) : v === t.v;
+  }
+  function matches(n) {
+    if (!st.q) return true;
+    if (queryText !== st.q) { query = parseQuery(st.q); queryText = st.q; }
+    var q = query;
+    if (q.empty) return true;
+    for (var i = 0; i < q.not.length; i++) if (termHits(n, q.not[i])) return false;
+    if (q.any.length && !q.any.some(function (t) { return termHits(n, t); })) return false;
+    return Object.keys(q.fields).every(function (f) {
+      return q.fields[f].some(function (t) { return termHits(n, t); });
+    });
+  }
   function stateOf(id) { return ITEM[id] ? ITEM[id].state : ""; }
   function colorOf(m, n) {
     if (st.color === "state") return STATE_COLOR[stateOf(n.id)] || "#616161";
@@ -868,6 +917,7 @@
       });
     });
     var match = st.q ? " · " + hits + " match" : "";
+    if (st.q) body.setAttribute("data-match", String(hits)); else body.removeAttribute("data-match");
     if (COMPARE) {
       var sa = model(panes[0].cluster).snap, sb = model(panes[1].cluster).snap, c = stateCounts();
       var errs = (sa.errors || []).length + (sb.errors || []).length;

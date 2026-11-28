@@ -35,6 +35,11 @@ All notable changes to this project are documented here. Versions follow
   each with a ServiceAccount and a ClusterRoleBinding; README "Permissions" shows how to collect
   with a short-lived ServiceAccount token. They replace the `inventory-reader` role the design
   mentioned but never shipped.
+- Page search with several values: terms separated by commas or spaces match any of them,
+  `-term` excludes, `"quoted text"` is one term, and `ns:`, `kind:`, `team:`, `mgr:`, `name:` match
+  a field exactly (`*` wildcard; OR within a field, AND across fields). A single term works as
+  before. The query stays in the URL hash (`q=`) on the render and compare pages; the page writes
+  `data-match` for automated checks.
 
 ## 0.1.4 — 2026-11-27
 
