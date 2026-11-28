@@ -143,14 +143,20 @@ func appOf(labels, ann map[string]string) string {
 }
 
 func teamOf(keys []string, maps ...map[string]string) string {
+	v, _ := teamFrom(keys, maps...)
+	return v
+}
+
+// teamFrom returns the first team value found, in key order within each map, and its key.
+func teamFrom(keys []string, maps ...map[string]string) (string, string) {
 	for _, m := range maps {
 		for _, k := range keys {
 			if v := m[k]; v != "" {
-				return v
+				return v, k
 			}
 		}
 	}
-	return ""
+	return "", ""
 }
 
 func hasPrefixKey(m map[string]string, prefix string) bool {

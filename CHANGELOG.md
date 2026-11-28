@@ -3,6 +3,17 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org).
 
+## Unreleased
+
+- `--redact` masks OpenShift values: the `<cluster>.<base domain>` part of API hosts
+  (`api.redacted:6443`, `api-int.redacted`) and of every host under `apps.<cluster>.<base>` (Route,
+  Ingress and HTTPRoute hosts, error messages), the dashed API host in `oc login` context, cluster
+  and user names (`ns-a/api-redacted:6443/user-a`), and team names taken from the
+  `openshift.io/requester` annotation, which are user names (`redacted-1`, `redacted-2`, the same
+  mask for the same user across the snapshots and the comparison of one run). API groups and CRD
+  names such as `apps.openshift.io` keep their names. Snapshots record where each namespace team
+  came from (`namespaces[].team_from`); collect again so `--redact` can find requester teams.
+
 ## 0.1.4 — 2026-11-27
 
 - PyPI: `uvx kubestrata`, `uv tool install kubestrata`, `pipx install kubestrata`. One wheel per

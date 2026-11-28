@@ -130,7 +130,9 @@ Visão de comparação entre `kuberito-source` e `kuberito-target`:
 | `kubestrata` | TUI interativa (planejada) |
 
 `--format json` imprime um documento para máquina com `schema_version` 1. `--redact` mascara IDs
-de conta AWS e hosts de endpoint EKS/AKS na saída e no site; o cache guarda os valores reais.
+de conta AWS, hosts de endpoint EKS/AKS, domínios de cluster OpenShift (`api.redacted:6443`,
+`web.apps.redacted`), o host da API nos nomes de contexto do `oc login` e nomes de time tirados de
+`openshift.io/requester` (nomes de usuário) na saída e no site; o cache guarda os valores reais.
 
 Escalas de anéis (`render`/`compare --scale`, também trocáveis na página): `30m` e `1h` (12 anéis
 de 30 minutos ou 1 hora, para cluster novo), `5d`, `10d`, `30d`, `log` e anéis custom com sufixo de

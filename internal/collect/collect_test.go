@@ -278,6 +278,13 @@ func TestNoiseAndClassification(t *testing.T) {
 	if teams["payments"] != "team-payments" || teams["legacy"] != "alice" {
 		t.Errorf("namespace teams = %v", teams)
 	}
+	from := map[string]string{}
+	for _, n := range snap.Namespaces {
+		from[n.Name] = n.TeamFrom
+	}
+	if from["payments"] != "team" || from["legacy"] != TeamFromRequester {
+		t.Errorf("namespace team sources = %v", from)
+	}
 	if find(t, snap, "core/Secret/payments/api-db").Team != "team-payments" {
 		t.Error("resource does not inherit the namespace team")
 	}

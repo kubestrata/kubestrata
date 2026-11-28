@@ -66,10 +66,13 @@ type Scope struct {
 
 // Namespace is the sector of the radial view.
 type Namespace struct {
-	Name    string    `json:"name"`
-	Team    string    `json:"team,omitempty"`
-	System  bool      `json:"system,omitempty"`
-	Created time.Time `json:"created"`
+	Name string `json:"name"`
+	Team string `json:"team,omitempty"`
+	// TeamFrom is the label or annotation key that named the team (openshift.io/requester holds a
+	// user name). Empty in snapshots collected before 0.2.
+	TeamFrom string    `json:"team_from,omitempty"`
+	System   bool      `json:"system,omitempty"`
+	Created  time.Time `json:"created"`
 }
 
 // Resource is the sanitized projection of one object. It never holds Secret data, env values,

@@ -130,7 +130,9 @@ Compare view of `kuberito-source` and `kuberito-target`:
 | `kubestrata` | interactive TUI (planned) |
 
 `--format json` prints a machine-readable document with `schema_version` 1. `--redact` masks AWS
-account ids and EKS/AKS endpoint hosts in the output and the site; the cache keeps the real values.
+account ids, EKS/AKS endpoint hosts, OpenShift cluster domains (`api.redacted:6443`,
+`web.apps.redacted`), the API host in `oc login` context names and team names taken from
+`openshift.io/requester` (user names) in the output and the site; the cache keeps the real values.
 
 Ring scales (`render`/`compare --scale`, also switchable in the page): `30m` and `1h` (12 rings of
 30 minutes or 1 hour, for young clusters), `5d`, `10d`, `30d`, `log`, and custom rings with unit

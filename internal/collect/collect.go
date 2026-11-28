@@ -193,12 +193,12 @@ type builder struct {
 }
 
 func (b *builder) namespaces(snap *snapshot.Snapshot, objs []unstructured.Unstructured) {
-	keys := append(append([]string{}, b.o.TeamKeys...), "openshift.io/requester")
+	keys := append(append([]string{}, b.o.TeamKeys...), TeamFromRequester)
 	for _, u := range objs {
-		team := teamOf(keys, u.GetLabels(), u.GetAnnotations())
+		team, from := teamFrom(keys, u.GetLabels(), u.GetAnnotations())
 		b.nsTeam[u.GetName()] = team
 		snap.Namespaces = append(snap.Namespaces, snapshot.Namespace{
-			Name: u.GetName(), Team: team, System: b.sysRE.MatchString(u.GetName()),
+			Name: u.GetName(), Team: team, TeamFrom: from, System: b.sysRE.MatchString(u.GetName()),
 			Created: u.GetCreationTimestamp().UTC(),
 		})
 	}

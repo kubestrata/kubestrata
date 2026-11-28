@@ -68,6 +68,7 @@ func newCompareCmd(g *globals) *cobra.Command {
 				out = filepath.Join(c.Dir, "compare")
 			}
 			// compared on the real values, masked for output and site
+			teams := g.teamMask(snaps)
 			if snaps, err = g.snapshots(snaps); err != nil {
 				return err
 			}
@@ -76,6 +77,9 @@ func newCompareCmd(g *globals) *cobra.Command {
 					return err
 				}
 				res.Source.Context, res.Target.Context = redact.Name(res.Source.Context), redact.Name(res.Target.Context)
+				for i := range res.Namespaces {
+					res.Namespaces[i].Team = maskTeam(teams, res.Namespaces[i].Team)
+				}
 			}
 			o.Version, o.Compare = g.version, res
 			index, err := render.Write(out, snaps, o)

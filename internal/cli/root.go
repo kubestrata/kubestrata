@@ -11,6 +11,7 @@ import (
 	"charm.land/fang/v2"
 	"github.com/spf13/cobra"
 
+	"github.com/kubestrata/kubestrata/internal/collect"
 	"github.com/kubestrata/kubestrata/internal/redact"
 	"github.com/kubestrata/kubestrata/internal/snapshot"
 )
@@ -47,7 +48,8 @@ func NewRoot(version string) *cobra.Command {
 	root.PersistentFlags().StringVar(&g.cacheDir, "cache-dir", "",
 		"snapshot cache (default: $KUBESTRATA_CACHE_DIR or the user cache dir)")
 	root.PersistentFlags().BoolVar(&g.redact, "redact", false,
-		"mask AWS account ids and EKS/AKS endpoint hosts in the output, --snapshot-out and the site (the cache keeps the real values)")
+		"mask AWS account ids, EKS/AKS endpoint hosts, OpenShift cluster domains and oc login hosts, and teams taken "+
+			"from openshift.io/requester, in the output, --snapshot-out and the site (the cache keeps the real values)")
 	root.AddCommand(newContextsCmd(g), newCollectCmd(g), newCacheCmd(g), newRenderCmd(g), newCompareCmd(g), newDiffCmd(g))
 	g.maskErrors(root)
 	return root
@@ -114,6 +116,7 @@ func (g *globals) snapshots(in []*snapshot.Snapshot) ([]*snapshot.Snapshot, erro
 	if !g.redact {
 		return in, nil
 	}
+	teams := g.teamMask(in)
 	out := make([]*snapshot.Snapshot, len(in))
 	for i, s := range in {
 		c, err := redact.Copy(s)
@@ -121,7 +124,43 @@ func (g *globals) snapshots(in []*snapshot.Snapshot) ([]*snapshot.Snapshot, erro
 			return nil, err
 		}
 		c.Cluster.Context = redact.Name(c.Cluster.Context)
+		for j := range c.Namespaces {
+			c.Namespaces[j].Team = maskTeam(teams, c.Namespaces[j].Team)
+		}
+		for j := range c.Resources {
+			c.Resources[j].Team = maskTeam(teams, c.Resources[j].Team)
+		}
 		out[i] = c
 	}
 	return out, nil
+}
+
+// teamMask maps the team names that came from openshift.io/requester (user names) in any of the
+// snapshots to pseudonyms (redacted-1, redacted-2, ...), so a team keeps one mask in every document
+// of the run. Keys are the names as redact.Text leaves them, ready for the masked copies. Nil
+// without --redact.
+func (g *globals) teamMask(snaps []*snapshot.Snapshot) map[string]string {
+	if !g.redact {
+		return nil
+	}
+	var users []string
+	for _, s := range snaps {
+		for _, n := range s.Namespaces {
+			if n.TeamFrom == collect.TeamFromRequester {
+				users = append(users, n.Team)
+			}
+		}
+	}
+	out := map[string]string{}
+	for user, mask := range redact.Pseudonyms(users) {
+		out[redact.Text(user)] = mask
+	}
+	return out
+}
+
+func maskTeam(teams map[string]string, team string) string {
+	if m, ok := teams[team]; ok {
+		return m
+	}
+	return team
 }

@@ -112,6 +112,10 @@ imprime e grava para compartilhar, e deixa o cache como está:
 | ID da conta no host de um registry ECR | `redacted.dkr.ecr.us-west-2.amazonaws.com/app:1.2` |
 | primeiro label de um endpoint EKS ou AKS | `redacted.gr7.us-west-2.eks.amazonaws.com`, `redacted.hcp.eastus.azmk8s.io` |
 | qualquer sequência de exatamente 12 dígitos num nome de contexto, cluster ou usuário | `redacted_AdministratorAccess` |
+| `<cluster>.<base>` de um host de API OpenShift, `api.<cluster>.<base>` ou `api-int.<cluster>.<base>` | `api.redacted:6443`, `api-int.redacted` |
+| `<cluster>.<base>` de qualquer host sob `apps.<cluster>.<base>` (hosts de Route, Ingress e HTTPRoute, mensagens) | `web-ns-a.apps.redacted` |
+| o host da API com hífens que o `oc login` grava nos nomes de cluster, usuário e contexto | `ns-a/api-redacted:6443/user-a` |
+| um time tirado da annotation de namespace `openshift.io/requester` (um nome de usuário) | `redacted-1`, `redacted-2` |
 
 Vale para o `contexts` (texto e JSON), a saída do `collect` e os arquivos do `--snapshot-out`, o
 `cache ls`, o `diff` e a saída e o site do `render` e do `compare` (toda string dos snapshots e da
@@ -120,7 +124,21 @@ mesma máscara, porque costuma citar o contexto. O `compare` e o `diff` pareiam 
 primeiro e mascaram o resultado, então os estados não mudam. Os ids de cluster são hashes e ficam
 como estão. Endpoint é um host com pelo menos dois labels entre o label do cluster e
 `eks.amazonaws.com` ou `azmk8s.io`, então grupos de API como `metrics.eks.amazonaws.com` não são
-mascarados. Sem `--redact`, o `collect --snapshot-out` imprime uma nota no stderr (saída em texto):
+mascarados.
+
+Formatos de host OpenShift: `api` e `api-int` precisam ser o primeiro label do host, `apps` precisa
+ser um label inteiro (pode vir depois de outros, como em `web-ns-a.apps.<cluster>.<base>`), e pelo
+menos três labels precisam vir depois deles, então grupos de API e nomes de CRD
+(`apps.openshift.io`, `deploymentconfigs.apps.openshift.io` numa mensagem Forbidden,
+`clonesets.apps.kruise.io`, `api.cerbos.dev`) ficam com o nome. Um cluster sob domínio base de um
+label só (`api.ocp.lab`) e domínios custom de Route (`shop.example.com`) não são reconhecidos. O
+`oc login` dá ao cluster o nome `api-<cluster>-<base com hífens>:<porta>`, ao usuário
+`<usuário>/<cluster>` e ao contexto `<namespace>/<cluster>/<usuário>`; o host com hífens precisa ter
+pelo menos duas partes depois de `api`, e a parte do usuário fica como está. Nomes de time vindos de
+`openshift.io/requester` viram `redacted-1`, `redacted-2`, ..., numerados sobre todos os snapshots da
+execução, então o mesmo usuário recebe a mesma máscara nos dois painéis de uma comparação e no JSON
+dela; o snapshot registra de onde veio o time de cada namespace (`team_from`), e snapshots coletados
+antes da 0.2 não têm esse campo, então colete de novo antes de compartilhar. Sem `--redact`, o `collect --snapshot-out` imprime uma nota no stderr (saída em texto):
 o arquivo sai do cache, então é a saída com mais chance de ser compartilhada.
 
 ## Kinds e categorias padrão
@@ -183,7 +201,7 @@ então uma troca só de ferramenta não é drift.
               "distro": "openshift", "distro_signals": ["group route.openshift.io"], "version": "v1.27.x",
               "nodes": {"count": 12, "arch": {"amd64": 12}, "instance_types": {"m6a.large": 12},
                         "capacity_types": {"on-demand": 10, "spot": 2}, "zones": ["a", "b"]}},
-  "namespaces": [{"name": "payments", "team": "team-payments", "created": "2024-06-01T00:00:00Z"}],
+  "namespaces": [{"name": "payments", "team": "team-payments", "team_from": "team", "created": "2024-06-01T00:00:00Z"}],
   "resources": [{
     "id": "apps/Deployment/payments/api", "cat": "workload", "ns": "payments", "name": "api",
     "created": "2025-04-24T10:00:00Z", "changed": "2026-10-02T18:30:00Z",
@@ -345,7 +363,8 @@ Fang v2 sobre Cobra nos comandos; Bubble Tea v2, Bubbles v2, Lip Gloss v2 e Huh 
 | `kubestrata diff -c ctx [--from stamp] [--to stamp]` | dois snapshots de um cluster: new / gone / drift / equal (CLI e JSON) |
 | `kubestrata cache ls\|prune [--keep 5]` | manutenção dos snapshots; o `ls` mostra o `STAMP` que o `diff` recebe |
 
-`--redact` (global) mascara IDs de conta e hosts de endpoint em toda saída (ver Mascaramento).
+`--redact` (global) mascara IDs de conta, hosts de endpoint, domínios de cluster OpenShift e nomes de
+time do requester em toda saída (ver Mascaramento).
 
 O estado da página fica no hash da URL
 (`#scale=log&axis=changed&color=manager&ns=<namespace>&sel=<id>`), então uma visão pode virar

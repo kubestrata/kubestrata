@@ -110,6 +110,10 @@ writes for sharing, and leaves the cache as it is:
 | account id in an ECR registry host | `redacted.dkr.ecr.us-west-2.amazonaws.com/app:1.2` |
 | first label of an EKS or AKS endpoint | `redacted.gr7.us-west-2.eks.amazonaws.com`, `redacted.hcp.eastus.azmk8s.io` |
 | any run of exactly 12 digits in a context, cluster or user name | `redacted_AdministratorAccess` |
+| `<cluster>.<base>` of an OpenShift API host, `api.<cluster>.<base>` or `api-int.<cluster>.<base>` | `api.redacted:6443`, `api-int.redacted` |
+| `<cluster>.<base>` of any host under `apps.<cluster>.<base>` (Route, Ingress and HTTPRoute hosts, messages) | `web-ns-a.apps.redacted` |
+| the dashed API host that `oc login` writes into cluster, user and context names | `ns-a/api-redacted:6443/user-a` |
+| a team taken from the namespace annotation `openshift.io/requester` (a user name) | `redacted-1`, `redacted-2` |
 
 It applies to `contexts` (text and JSON), `collect` output and `--snapshot-out` files, `cache ls`,
 `diff`, and the `render` and `compare` output and site (every string of the snapshots and of the
@@ -117,7 +121,21 @@ comparison, error messages included). Every command's error, printed on stderr, 
 same mask, since it often names the context. `compare` and `diff` pair the real snapshots first and
 mask the result, so the states do not change. Cluster ids are hashes and stay as they are. An
 endpoint is a host with at least two labels between the cluster label and `eks.amazonaws.com` or
-`azmk8s.io`, so API groups such as `metrics.eks.amazonaws.com` are not masked. Without `--redact`,
+`azmk8s.io`, so API groups such as `metrics.eks.amazonaws.com` are not masked.
+
+OpenShift host shapes: `api` and `api-int` must be the first label of the host, `apps` must be a
+whole label (it may follow others, as in `web-ns-a.apps.<cluster>.<base>`), and at least three
+labels must follow them, so API groups and CRD names (`apps.openshift.io`,
+`deploymentconfigs.apps.openshift.io` in a Forbidden message, `clonesets.apps.kruise.io`,
+`api.cerbos.dev`) keep their names. A cluster under a one-label base domain (`api.ocp.lab`) and
+custom Route domains (`shop.example.com`) are not recognized. `oc login` names the cluster
+`api-<cluster>-<base with dashes>:<port>`, the user `<user>/<cluster>` and the context
+`<namespace>/<cluster>/<user>`; the dashed host must have at least two parts after `api`, and the
+user part is left as it is. Team names from `openshift.io/requester` become `redacted-1`,
+`redacted-2`, ... numbered over every snapshot of the run, so the same user gets the same mask in
+both panes of a comparison and in its JSON; the snapshot records where each namespace team came
+from (`team_from`), and snapshots collected before 0.2 lack it, so collect again before sharing.
+Without `--redact`,
 `collect --snapshot-out` prints a note on stderr (text output): the file leaves the cache, so it is
 the output most likely to be shared.
 
@@ -181,7 +199,7 @@ fingerprint, so a change of tool alone is not a drift.
               "distro": "openshift", "distro_signals": ["group route.openshift.io"], "version": "v1.27.x",
               "nodes": {"count": 12, "arch": {"amd64": 12}, "instance_types": {"m6a.large": 12},
                         "capacity_types": {"on-demand": 10, "spot": 2}, "zones": ["a", "b"]}},
-  "namespaces": [{"name": "payments", "team": "team-payments", "created": "2024-06-01T00:00:00Z"}],
+  "namespaces": [{"name": "payments", "team": "team-payments", "team_from": "team", "created": "2024-06-01T00:00:00Z"}],
   "resources": [{
     "id": "apps/Deployment/payments/api", "cat": "workload", "ns": "payments", "name": "api",
     "created": "2025-04-24T10:00:00Z", "changed": "2026-10-02T18:30:00Z",
@@ -337,7 +355,8 @@ Fang v2 over Cobra for commands; Bubble Tea v2, Bubbles v2, Lip Gloss v2 and Huh
 | `kubestrata diff -c ctx [--from stamp] [--to stamp]` | two snapshots of one cluster: new / gone / drift / equal (CLI and JSON) |
 | `kubestrata cache ls\|prune [--keep 5]` | snapshot housekeeping; `ls` shows the `STAMP` that `diff` takes |
 
-`--redact` (global) masks account ids and endpoint hosts in every output (see Redaction).
+`--redact` (global) masks account ids, endpoint hosts, OpenShift cluster domains and requester team
+names in every output (see Redaction).
 
 The page state lives in the URL hash (`#scale=log&axis=changed&color=manager&ns=<namespace>&sel=<id>`),
 so a view can be bookmarked and checked headless; `ns=` works in the single-cluster view too. A

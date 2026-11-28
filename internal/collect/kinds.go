@@ -80,3 +80,7 @@ const DefaultSystemNS = `^(kube-system|kube-public|kube-node-lease|local-path-st
 // DefaultTeamKeys are looked up, in order, in resource labels and then namespace labels and
 // annotations. openshift.io/requester (set on OpenShift projects) is the last fallback.
 var DefaultTeamKeys = []string{"team", "owner", "app.kubernetes.io/part-of"}
+
+// TeamFromRequester is the namespace annotation OpenShift sets to the user who requested the
+// project. A team taken from it is a user name: --redact masks it.
+const TeamFromRequester = "openshift.io/requester"

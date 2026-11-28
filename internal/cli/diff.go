@@ -58,10 +58,14 @@ func newDiffCmd(g *globals) *cobra.Command {
 			}
 			tl := compare.CompareTimeline(a, b)
 			if g.redact {
+				teams := g.teamMask([]*snapshot.Snapshot{a, b})
 				if tl, err = redact.Copy(tl); err != nil {
 					return err
 				}
 				tl.Source.Context, tl.Target.Context = redact.Name(tl.Source.Context), redact.Name(tl.Target.Context)
+				for i := range tl.Namespaces {
+					tl.Namespaces[i].Team = maskTeam(teams, tl.Namespaces[i].Team)
+				}
 			}
 			if g.format == "json" {
 				return writeJSON(cmd.OutOrStdout(), tl)
