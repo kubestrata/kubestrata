@@ -21,6 +21,7 @@ repositório mostra os alertas abertos agora.
 | Secret scanning e push protection | credenciais commitadas no repositório | a cada push | push com segredo detectado é recusado |
 | `go vet`, `staticcheck` ([`ci.yml`](../.github/workflows/ci.yml)) | padrões de bug | todo pull request, todo push na `main` | sim |
 | [`install-smoke.yml`](../.github/workflows/install-smoke.yml) | o binário instalado nunca imprime a credencial do kubeconfig (`contexts` num kubeconfig de teste com token) | depois de cada release, toda semana | sim |
+| [`lab.yml`](../.github/workflows/lab.yml) | num lab do kuberito (release fixada, checksum e assinatura cosign conferidos): nenhum valor de segredo semeado, `last-applied-configuration` ou ID de conta em snapshot algum (`TestLabNoSecretLeak`), e as páginas carregam sob a Content-Security-Policy sem erro (`make page-check`) | todo pull request, todo push na `main`, toda semana, depois que a variável `KUBERITO_PUBLIC` for `true` | sim |
 
 Os achados da biblioteca padrão dependem da versão do Go que compila o binário, que é a linha `go`
 do [`go.mod`](../go.mod) (o workflow de release lê essa linha). Um advisory novo do Go reprova o

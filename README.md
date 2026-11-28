@@ -97,9 +97,10 @@ kubestrata compare -c <source> -c <target> --open   # side by side, with the cov
 
 ### No cluster at hand? Try it on the kuberito lab
 
-[kuberito](https://github.com/kuberito/kuberito) (not public yet) brings up two small local clusters on Docker, an
-OpenShift-like source and an EKS-like target, with a migration in progress. Install it as its
-README describes, then:
+[kuberito](https://github.com/kuberito/kuberito) brings up two small local clusters on Docker, an
+OpenShift-like source and an EKS-like target, with a migration in progress. It is the lab of
+kubestrata's end-to-end tests ([`lab.yml`](.github/workflows/lab.yml) runs them in CI on the full
+profile). Install it as its README describes (`brew install kuberito/tap/kuberito`), then:
 
 ```sh
 kuberito up && eval "$(kuberito env)"     # KUBECONFIG=~/.kuberito/kubeconfig for this shell

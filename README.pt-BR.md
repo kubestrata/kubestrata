@@ -97,9 +97,11 @@ kubestrata compare -c <origem> -c <destino> --open  # lado a lado, com a cobertu
 
 ### Sem cluster à mão? Teste no lab do kuberito
 
-O [kuberito](https://github.com/kuberito/kuberito) (ainda não público) sobe dois clusters locais pequenos no Docker,
-uma origem parecida com OpenShift e um destino parecido com EKS, com uma migração em andamento.
-Instale como o README dele descreve e depois:
+O [kuberito](https://github.com/kuberito/kuberito) sobe dois clusters locais pequenos no Docker,
+uma origem parecida com OpenShift e um destino parecido com EKS, com uma migração em andamento. É o
+lab dos testes ponta a ponta do kubestrata (o [`lab.yml`](.github/workflows/lab.yml) roda esses
+testes no CI com o perfil full). Instale como o README dele descreve
+(`brew install kuberito/tap/kuberito`) e depois:
 
 ```sh
 kuberito up && eval "$(kuberito env)"     # KUBECONFIG=~/.kuberito/kubeconfig neste shell

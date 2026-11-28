@@ -11,7 +11,7 @@ Issues e pull requests são bem-vindos. Regras curtas:
 | Determinismo | mesmo snapshot, mesmos bytes na saída: sem relógio, sem iteração de map sem ordenar |
 | Contrato do snapshot | campos só crescem; mudança de significado sobe o `schema_version` e o leitor recusa versão maior |
 | Visão web | sem rede (CSP), texto não confiável só por `textContent`; rode `make page-check` |
-| Verificação | `make check` (gofmt, vet, staticcheck, `go test -race`, build); com um lab kuberito, `make lab-test` |
+| Verificação | `make check` (gofmt, vet, staticcheck, `go test -race`, build); em mudança de coleta, compare ou página, num lab do [kuberito](https://github.com/kuberito/kuberito) (`brew install kuberito/tap/kuberito && kuberito up`), `make lab-test` e `make page-check`, que o CI também roda no `lab.yml` |
 | Workflows | actions fixadas pelo SHA completo com a tag em comentário; `permissions:` mínimas; `persist-credentials: false` |
 | Commits | em inglês, no imperativo (`feat:`, `fix:`, `docs:`, `chore:`) |
 | Docs | os arquivos em inglês são a versão oficial; mantenha a tradução `*.pt-BR.md` em dia no mesmo PR quando possível |

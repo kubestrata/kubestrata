@@ -52,6 +52,10 @@ All notable changes to this project are documented here. Versions follow
 - Ingress, HTTPRoute and Route facts gain `backends` (`service:port`, the port resolved to the
   Service port), Ingress and HTTPRoute `paths`, Ingress `tls`. They enter the fingerprint; between
   snapshots of 0.1.x and this version they are listed as collector facts, not as drift.
+- CI: `lab.yml` runs the end-to-end tests on a kuberito lab (`kuberito up --profile full`,
+  `make lab-test`, `make page-check`) on pull requests, pushes to `main`, weekly and on demand,
+  with kuberito installed from its release (version pinned, checksum and cosign signature
+  verified). It is skipped until the repository variable `KUBERITO_PUBLIC` is `true`.
 
 ## 0.1.4 — 2026-11-27
 
