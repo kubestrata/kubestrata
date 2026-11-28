@@ -13,7 +13,7 @@ OpenShift → EKS for conferida à mão numa migração real, e então a 1.0.0.
 | JSON Schemas para toda saída JSON, conferidos contra saídas reais nos testes | feito | [`schemas/`](../schemas/), `go test ./schemas`, o e2e do lab |
 | Política de compatibilidade escrita: o que o `schema_version` 1 cobre, o que pode mudar antes da 1.0, as regras a partir da 1.0 | feito; as regras da 1.0 são uma proposta a adotar com a 1.0 | [compatibility.pt-BR.md](compatibility.pt-BR.md) |
 | RBAC só de leitura publicado, com e sem Secrets | feito | [`deploy/rbac/`](../deploy/rbac/), README "Permissões" |
-| SBOM e build provenance SLSA para os pacotes da release | feito no `release.yml`, ainda não exercitado: a 0.2.0 é a primeira release com eles | [security-analysis.pt-BR.md](security-analysis.pt-BR.md) |
+| SBOM e build provenance SLSA para os pacotes da release | feito: a partir da 0.2.0, conferido com `gh attestation verify` | [security-analysis.pt-BR.md](security-analysis.pt-BR.md) |
 | Testes ponta a ponta no CI sobre o lab do kuberito | feito no `lab.yml`: todo pull request, todo push na `main` e toda semana, com o kuberito v0.2.0 | [`lab.yml`](../.github/workflows/lab.yml) |
 | OpenSSF Scorecard e cobertura de testes medida | feito: Scorecard semanal e na `main`; cobertura impressa no CI, sem limite mínimo ainda | [`scorecard.yml`](../.github/workflows/scorecard.yml), [`ci.yml`](../.github/workflows/ci.yml) |
 | Piloto de comparação OpenShift → EKS conferido à mão: traduções de kind (Route → HTTPRoute ou Ingress, DeploymentConfig → Deployment), cobertura e drift numa migração real | não iniciado | condição para a `1.0.0-rc.1` |
