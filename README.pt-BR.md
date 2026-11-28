@@ -52,7 +52,7 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 Release (darwin/linux, arm64/amd64), com verificação de checksum e assinatura keyless:
 
 ```sh
-v=0.1.4; os=darwin; arch=arm64
+v=0.2.0; os=darwin; arch=arm64
 base="https://github.com/kubestrata/kubestrata/releases/download/v${v}"
 curl -fsSLO "${base}/kubestrata_${v}_${os}_${arch}.tar.gz"
 curl -fsSLO "${base}/checksums.txt"
@@ -67,7 +67,7 @@ tar -xzf "kubestrata_${v}_${os}_${arch}.tar.gz" kubestrata
 No Linux, `sha256sum -c -` faz o mesmo que `shasum -a 256 -c -`. Para compilar a partir de um
 clone, o `make build` grava `bin/kubestrata`.
 
-As releases depois da 0.1.4 também trazem attestations de artefato do GitHub: build provenance SLSA
+As releases a partir da 0.2.0 também trazem attestations de artefato do GitHub: build provenance SLSA
 para todo pacote e um SBOM CycloneDX por pacote (`kubestrata_${v}_${os}_${arch}.cdx.json`, anexado à
 release e com attestation). Para verificar sem cosign, com o [GitHub CLI](https://cli.github.com):
 

@@ -37,7 +37,7 @@ do [`go.mod`](../go.mod) (o workflow de release lê essa linha). Um advisory nov
 - Os archives da release saem com `CGO_ENABLED=0`, `-trimpath` e metadados fixos no tar. O
   `checksums.txt` é assinado com cosign keyless (Sigstore, OIDC do GitHub); o README mostra como
   verificar um archive.
-- As releases depois da 0.1.4 trazem attestations de artefato do GitHub (`actions/attest`
+- As releases a partir da 0.2.0 trazem attestations de artefato do GitHub (`actions/attest`
   v4.2.2): build provenance SLSA para todo
   archive do `checksums.txt` e um SBOM CycloneDX por archive (`cyclonedx-gomod` v1.12.0: os módulos
   e a biblioteca padrão daquele build GOOS/GOARCH), anexado à release e com attestation. O
@@ -53,7 +53,7 @@ do [`go.mod`](../go.mod) (o workflow de release lê essa linha). Um advisory nov
 ## Repetir as checagens numa release
 
 ```sh
-v=0.1.4
+v=0.2.0
 gh release download "v${v}" -R kubestrata/kubestrata -p "kubestrata_${v}_linux_amd64.tar.gz"
 tar -xzf "kubestrata_${v}_linux_amd64.tar.gz" kubestrata
 go version kubestrata                                   # toolchain do Go que compilou o binário

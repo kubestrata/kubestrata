@@ -3,6 +3,7 @@
 /tmp/
 *.test
 *.out
+__pycache__/
 coverage.*
 .DS_Store
 # local renders and snapshots must never be committed: they describe real clusters

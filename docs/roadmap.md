@@ -14,7 +14,7 @@ comparison has been checked by hand on a real migration, then 1.0.0.
 | Written compatibility policy: what `schema_version` 1 covers, what may change before 1.0, the rules from 1.0 on | done; the 1.0 rules are a proposal to adopt with 1.0 | [compatibility.md](compatibility.md) |
 | Published read-only RBAC, with and without Secrets | done | [`deploy/rbac/`](../deploy/rbac/), README "Permissions" |
 | SBOM and SLSA build provenance for the release archives | done in `release.yml`, not exercised yet: 0.2.0 is the first release with them | [security-analysis.md](security-analysis.md) |
-| End-to-end tests in CI on the kuberito lab | done in `lab.yml`, skipped until kuberito is public and the variable `KUBERITO_PUBLIC` is `true` | [`lab.yml`](../.github/workflows/lab.yml) |
+| End-to-end tests in CI on the kuberito lab | done in `lab.yml`: every pull request, every push to `main` and weekly, on kuberito v0.2.0 | [`lab.yml`](../.github/workflows/lab.yml) |
 | OpenSSF Scorecard and measured test coverage | done: Scorecard weekly and on `main`; coverage printed in CI, no threshold yet | [`scorecard.yml`](../.github/workflows/scorecard.yml), [`ci.yml`](../.github/workflows/ci.yml) |
 | OpenShift → EKS comparison pilot checked by hand: kind translations (Route → HTTPRoute or Ingress, DeploymentConfig → Deployment), coverage and drift on a real migration | not started | gate for `1.0.0-rc.1` |
 | A second reviewer for changes | not planned: accepted risk | see below |

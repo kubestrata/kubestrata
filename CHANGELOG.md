@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. Versions follow
 [Semantic Versioning](https://semver.org).
 
-## Unreleased
+## 0.2.0 — 2026-11-28
 
 - `--redact` masks OpenShift values: the `<cluster>.<base domain>` part of API hosts
   (`api.redacted:6443`, `api-int.redacted`) and of every host under `apps.<cluster>.<base>` (Route,
@@ -112,8 +112,8 @@ All notable changes to this project are documented here. Versions follow
   a single maintainer.
 - CI: `lab.yml` runs the end-to-end tests on a kuberito lab (`kuberito up --profile full`,
   `make lab-test`, `make page-check`) on pull requests, pushes to `main`, weekly and on demand,
-  with kuberito installed from its release (version pinned, checksum and cosign signature
-  verified). It is skipped until the repository variable `KUBERITO_PUBLIC` is `true`.
+  with kuberito v0.2.0 installed from its release (archive sha256 pinned, checksum and cosign
+  signature verified). The repository variable `KUBERITO_PUBLIC` turns it on.
 
 ## 0.1.4 — 2026-11-27
 

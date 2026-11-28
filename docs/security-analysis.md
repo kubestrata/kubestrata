@@ -37,7 +37,7 @@ line of [`go.mod`](../go.mod) (the release workflow reads it). A new Go advisory
 - Release archives are built with `CGO_ENABLED=0`, `-trimpath` and fixed archive metadata.
   `checksums.txt` is signed with cosign keyless (Sigstore, GitHub OIDC); the README shows how to
   verify an archive.
-- Releases after 0.1.4 carry GitHub artifact attestations (`actions/attest` v4.2.2): SLSA build
+- Releases from 0.2.0 on carry GitHub artifact attestations (`actions/attest` v4.2.2): SLSA build
   provenance for every archive of `checksums.txt`, and one
   CycloneDX SBOM per archive (`cyclonedx-gomod` v1.12.0: the modules and the standard library of
   that GOOS/GOARCH build), attached to the release and attested. `gh attestation verify
@@ -53,7 +53,7 @@ line of [`go.mod`](../go.mod) (the release workflow reads it). A new Go advisory
 ## Repeat the checks on a release
 
 ```sh
-v=0.1.4
+v=0.2.0
 gh release download "v${v}" -R kubestrata/kubestrata -p "kubestrata_${v}_linux_amd64.tar.gz"
 tar -xzf "kubestrata_${v}_linux_amd64.tar.gz" kubestrata
 go version kubestrata                                   # Go toolchain the binary was built with
