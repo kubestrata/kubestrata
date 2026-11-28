@@ -179,6 +179,12 @@ func Collect(ctx context.Context, src Source, o Options) (*snapshot.Snapshot, er
 	}
 	snap.Cluster.Distro, snap.Cluster.DistroSignals = detectDistro(groups, snap.Cluster.ServerHost, version, providerIDs, nodeLabels)
 	snap.Resources, snap.Edges = b.finish()
+	for _, a := range apis {
+		if a.Group == argoGroup && a.Resource == "applications" {
+			snap.Cluster.ArgoCD = attributeArgoCD(snap.Resources, todo)
+			break
+		}
+	}
 	snap.Normalize()
 	return snap, nil
 }

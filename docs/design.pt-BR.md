@@ -201,6 +201,19 @@ EKS Auto Mode grava defaults nos NodePools que o Terraform cria).
 | other | qualquer outro field manager (listado em `facts.field_managers`) | unknown tool: check managedFields |
 | unknown | sem `managedFields` | no manager data |
 
+O Argo CD pode rastrear o que implanta por um label (`argocd.argoproj.io/instance`, ou o label que
+a instância configura), pela annotation `argocd.argoproj.io/tracking-id`, ou pelos dois, e uma
+instância pode não usar nenhum dos padrões acima. Por isso, quando o cluster serve Applications de
+`argoproj.io`, o kubestrata também lê o `status.resources` (group, kind, namespace, name) de cada
+Application e dá o manager `argocd` a todo objeto coletado listado ali, acima de qualquer outro
+manager. Uma Application cujo destino é outro cluster (`spec.destination.server` diferente de
+`https://kubernetes.default.svc`, ou um `name` diferente de `in-cluster`) lista objetos daquele
+cluster: conta como remota e não é usada. O cluster ganha então `argocd` (`applications`,
+`remote`, `managed`, `from_status`); `managed: 0` aparece na página como "Argo CD installed, no
+managed objects found": as Applications implantam em outro lugar, não podem ser lidas (ver
+`errors`) ou não rastreiam nada do que foi coletado. Com `--crds=false` as Applications não são
+listadas.
+
 Nem o `manager` (campo do recurso) nem o `field_managers` (fato volátil) entram no fingerprint,
 então uma troca só de ferramenta não é drift.
 
@@ -214,7 +227,8 @@ então uma troca só de ferramenta não é drift.
   "cluster": {"id": "3f9a1c0b7e21", "context": "source", "server_host": "api.example:6443",
               "distro": "openshift", "distro_signals": ["group route.openshift.io"], "version": "v1.27.x",
               "nodes": {"count": 12, "arch": {"amd64": 12}, "instance_types": {"m6a.large": 12},
-                        "capacity_types": {"on-demand": 10, "spot": 2}, "zones": ["a", "b"]}},
+                        "capacity_types": {"on-demand": 10, "spot": 2}, "zones": ["a", "b"]},
+              "argocd": {"applications": 3, "managed": 41, "from_status": 12}},
   "namespaces": [{"name": "payments", "team": "team-payments", "team_from": "team", "created": "2024-06-01T00:00:00Z"}],
   "resources": [{
     "id": "apps/Deployment/payments/api", "cat": "workload", "ns": "payments", "name": "api",

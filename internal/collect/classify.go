@@ -6,6 +6,8 @@ import (
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/kubestrata/kubestrata/internal/snapshot"
 )
 
 // Managers: how an object got into the cluster. Drives the migration path.
@@ -20,6 +22,53 @@ const (
 	MgrOther     = "other"
 	MgrUnknown   = "unknown"
 )
+
+// argoGroup is the API group of Argo CD.
+const argoGroup = "argoproj.io"
+
+// attributeArgoCD gives the manager argocd to every resource listed in the status.resources of a
+// local Argo CD Application, whatever tracking method (label, annotation) the instance uses, and
+// summarizes the result. An Application that deploys to another cluster lists objects of that
+// cluster: it is counted as remote and its status is not used.
+func attributeArgoCD(res []snapshot.Resource, lists []listed) *snapshot.ArgoCD {
+	out := &snapshot.ArgoCD{}
+	managed := map[string]bool{}
+	for _, l := range lists {
+		if l.api.Group != argoGroup || l.api.Kind != "Application" {
+			continue
+		}
+		for _, u := range l.objs {
+			out.Applications++
+			if !localDestination(m(path(u.Object, "spec", "destination"))) {
+				out.Remote++
+				continue
+			}
+			for _, r := range sl(path(u.Object, "status", "resources")) {
+				rm := m(r)
+				if name := s(rm["name"]); name != "" {
+					managed[snapshot.ID(s(rm["group"]), s(rm["kind"]), s(rm["namespace"]), name)] = true
+				}
+			}
+		}
+	}
+	for i := range res {
+		r := &res[i]
+		if managed[r.ID] && r.Manager != MgrArgoCD {
+			r.Manager = MgrArgoCD
+			out.FromStatus++
+		}
+		if r.Manager == MgrArgoCD {
+			out.Managed++
+		}
+	}
+	return out
+}
+
+// localDestination reports whether an Application destination is the cluster Argo CD runs in.
+func localDestination(dest map[string]any) bool {
+	server, name := strings.TrimSuffix(s(dest["server"]), "/"), s(dest["name"])
+	return server == "https://kubernetes.default.svc" || (server == "" && (name == "" || name == "in-cluster"))
+}
 
 // classifyManager prefers explicit labels and annotations, then the creating field manager.
 func classifyManager(labels, ann map[string]string, mf []metav1.ManagedFieldsEntry, ownedByCR bool) (string, []string) {

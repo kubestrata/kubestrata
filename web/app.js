@@ -120,6 +120,14 @@
     return days >= 365 && days % 365 === 0 ? (days / 365) + "y" : days + "d";
   }
   function pct(c) { return c === null || c === undefined ? "—" : Math.round(c * 100) + "%"; }
+  // cluster.argocd: what Argo CD manages; managed 0 means installed, nothing attributed
+  function argoText(a) {
+    var apps = a.applications + " Application" + (a.applications === 1 ? "" : "s") +
+      (a.remote ? ", " + a.remote + " deploying to other clusters" : "");
+    if (!a.managed) return "installed, no managed objects found (" + apps + ")";
+    return a.managed + " objects managed" + (a.from_status ? ", " + a.from_status + " found only in Application status" : "") +
+      " (" + apps + ")";
+  }
   // {"c6a.xlarge": 3, "m6a.large": 1} → "c6a.xlarge: 3, m6a.large: 1"
   function counts(o) { return Object.keys(o).sort().map(function (k) { return k + ": " + o[k]; }).join(", "); }
 
@@ -563,6 +571,7 @@
       if (c.nodes && c.nodes.instance_types) row(t, "instance types", counts(c.nodes.instance_types));
       if (c.nodes && c.nodes.capacity_types) row(t, "capacity types", counts(c.nodes.capacity_types));
       if (c.distro_signals && c.distro_signals.length) row(t, "distro signals", c.distro_signals);
+      if (c.argocd) row(t, "argo cd", argoText(c.argocd), c.argocd.managed ? null : "eol");
       row(t, "resources", s.resources.length);
       row(t, "edges", (s.edges || []).length);
       box.appendChild(t);
@@ -649,6 +658,7 @@
         var a = ca.nodes && ca.nodes[k], b = cb.nodes && cb.nodes[k];
         if (a || b) row3(t, k.replace("_", " "), a && counts(a), b && counts(b));
       });
+      if (ca.argocd || cb.argocd) row3(t, "argo cd", ca.argocd && argoText(ca.argocd), cb.argocd && argoText(cb.argocd));
       row3(t, "resources", sa.resources.length, sb.resources.length);
       box.appendChild(t);
       box.appendChild(el("h3", null, "states (shown resources)"));

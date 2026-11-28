@@ -19,6 +19,12 @@ All notable changes to this project are documented here. Versions follow
   ages of the rendered snapshots, rounded to readable values (`270d,1y,1.5y,2y,2.5y,3y`), computed
   for both axes. The default stays `30d`: on the kuberito lab, `auto` squeezes the migration waves of
   the target into the first rings of the comparison. Ring labels show half years as `1.5y`.
+- Argo CD attribution from `status.resources` of the Applications that deploy to the collected
+  cluster, whatever tracking method the instance uses (the label and annotation checks stay). An
+  Application with another destination is counted as remote and not used. Snapshots carry
+  `cluster.argocd` (`applications`, `remote`, `managed`, `from_status`) when the cluster serves the
+  Application kind; the page says "Argo CD installed, no managed objects found" when nothing is
+  attributed.
 
 ## 0.1.4 — 2026-11-27
 

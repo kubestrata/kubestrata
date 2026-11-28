@@ -43,6 +43,22 @@ type Cluster struct {
 	DistroSignals []string    `json:"distro_signals,omitempty"`
 	Version       string      `json:"version"`
 	Nodes         NodeSummary `json:"nodes"`
+	// ArgoCD is set when the cluster serves the Argo CD Application kind (argoproj.io).
+	ArgoCD *ArgoCD `json:"argocd,omitempty"`
+}
+
+// ArgoCD summarizes what Argo CD manages in the snapshot. Managed 0 with the kind served reads
+// "Argo CD installed, no managed objects found": the Applications deploy elsewhere, cannot be
+// read, or track nothing that was collected.
+type ArgoCD struct {
+	// Applications collected; Remote of them deploy to another cluster, so their status is not
+	// used here.
+	Applications int `json:"applications"`
+	Remote       int `json:"remote,omitempty"`
+	// Managed is the number of resources with manager argocd, by any check; FromStatus of them were
+	// found only in the status.resources of a local Application.
+	Managed    int `json:"managed"`
+	FromStatus int `json:"from_status,omitempty"`
 }
 
 // NodeSummary aggregates nodes; individual nodes are not inventory items. Instance and capacity

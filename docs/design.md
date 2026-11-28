@@ -198,6 +198,19 @@ NodePools Terraform creates).
 | other | any other field manager (listed in `facts.field_managers`) | unknown tool: check managedFields |
 | unknown | no `managedFields` | no manager data |
 
+Argo CD can track what it deploys by a label (`argocd.argoproj.io/instance`, or the label an
+instance configures), by the annotation `argocd.argoproj.io/tracking-id`, or both, and an instance
+may use none of the defaults above. So when the cluster serves `argoproj.io` Applications,
+kubestrata also reads each Application's `status.resources` (group, kind, namespace, name) and
+gives the manager `argocd` to every collected object listed there, over any other manager. An
+Application whose destination is another cluster (`spec.destination.server` other than
+`https://kubernetes.default.svc`, or a `name` other than `in-cluster`) lists that cluster's
+objects: it is counted as remote and not used. The cluster then gets `argocd`
+(`applications`, `remote`, `managed`, `from_status`); `managed: 0` shows in the page as "Argo CD
+installed, no managed objects found": the Applications deploy elsewhere, cannot be read (see
+`errors`), or track nothing that was collected. With `--crds=false` the Applications are not
+listed.
+
 Neither `manager` (a resource field) nor `field_managers` (a volatile fact) enters the
 fingerprint, so a change of tool alone is not a drift.
 
@@ -211,7 +224,8 @@ fingerprint, so a change of tool alone is not a drift.
   "cluster": {"id": "3f9a1c0b7e21", "context": "source", "server_host": "api.example:6443",
               "distro": "openshift", "distro_signals": ["group route.openshift.io"], "version": "v1.27.x",
               "nodes": {"count": 12, "arch": {"amd64": 12}, "instance_types": {"m6a.large": 12},
-                        "capacity_types": {"on-demand": 10, "spot": 2}, "zones": ["a", "b"]}},
+                        "capacity_types": {"on-demand": 10, "spot": 2}, "zones": ["a", "b"]},
+              "argocd": {"applications": 3, "managed": 41, "from_status": 12}},
   "namespaces": [{"name": "payments", "team": "team-payments", "team_from": "team", "created": "2024-06-01T00:00:00Z"}],
   "resources": [{
     "id": "apps/Deployment/payments/api", "cat": "workload", "ns": "payments", "name": "api",

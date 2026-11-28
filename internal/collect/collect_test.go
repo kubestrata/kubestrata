@@ -48,6 +48,7 @@ var resourceOf = map[string]APIResource{
 type fakeSource struct {
 	objs    map[schema.GroupResource][]unstructured.Unstructured
 	secrets []SecretMeta
+	apis    []APIResource // served resources; nil serves resourceOf and Secrets
 }
 
 func loadFake(t *testing.T) *fakeSource {
@@ -105,6 +106,9 @@ func (f *fakeSource) ServerVersion(context.Context) (string, error) {
 }
 func (f *fakeSource) KubeSystemUID(context.Context) (string, error) { return "ns-kube-system", nil }
 func (f *fakeSource) Discover(context.Context) ([]APIResource, []error) {
+	if f.apis != nil {
+		return f.apis, nil
+	}
 	var out []APIResource
 	for _, r := range resourceOf {
 		out = append(out, r)
@@ -532,5 +536,131 @@ func TestCreatorSkipsSystemManagers(t *testing.T) {
 	}
 	if got := creatorManager(mf[:1]); got != "kube-controller-manager" {
 		t.Fatalf("only system manager: creator = %s", got)
+	}
+}
+
+// obj builds an unstructured object created at 2026-01-01 by one field manager.
+func obj(apiVersion, kind, ns, name, manager string, labels map[string]string, fields map[string]any) unstructured.Unstructured {
+	meta := map[string]any{"name": name, "uid": "uid-" + ns + "-" + kind + "-" + name,
+		"creationTimestamp": "2026-01-01T00:00:00Z",
+		"managedFields":     []any{map[string]any{"manager": manager, "operation": "Update", "time": "2026-01-01T00:00:00Z"}}}
+	if ns != "" {
+		meta["namespace"] = ns
+	}
+	if labels != nil {
+		l := map[string]any{}
+		for k, v := range labels {
+			l[k] = v
+		}
+		meta["labels"] = l
+	}
+	o := map[string]any{"apiVersion": apiVersion, "kind": kind, "metadata": meta}
+	for k, v := range fields {
+		o[k] = v
+	}
+	return unstructured.Unstructured{Object: o}
+}
+
+var applicationAPI = APIResource{Group: "argoproj.io", Version: "v1alpha1", Resource: "applications", Kind: "Application",
+	Namespaced: true, CRD: true}
+
+// smallSource serves namespaces and the given resources with their objects.
+func smallSource(objs map[APIResource][]unstructured.Unstructured) *fakeSource {
+	f := &fakeSource{objs: map[schema.GroupResource][]unstructured.Unstructured{}}
+	ns := resourceOf["/Namespace"]
+	f.apis = []APIResource{ns}
+	f.objs[schema.GroupResource{Resource: "namespaces"}] = []unstructured.Unstructured{
+		obj("v1", "Namespace", "", "ns-a", "kubectl-create", nil, nil),
+		obj("v1", "Namespace", "", "openshift-gitops", "kubectl-create", nil, nil)}
+	for r, list := range objs {
+		f.apis = append(f.apis, r)
+		f.objs[schema.GroupResource{Group: r.Group, Resource: r.Resource}] = list
+	}
+	return f
+}
+
+func application(name, server string, managed ...map[string]any) unstructured.Unstructured {
+	var res []any
+	for _, r := range managed {
+		res = append(res, r)
+	}
+	return obj("argoproj.io/v1alpha1", "Application", "openshift-gitops", name, "kubectl-client-side-apply", nil,
+		map[string]any{"spec": map[string]any{"destination": map[string]any{"server": server, "namespace": "ns-a"}},
+			"status": map[string]any{"resources": res}})
+}
+
+// Argo CD objects tracked by neither label nor annotation are attributed through the
+// status.resources of the Applications that deploy to this cluster (K14).
+func TestArgoCDFromApplicationStatus(t *testing.T) {
+	deploy, svc, sc := resourceOf["apps/Deployment"], resourceOf["/Service"], resourceOf["storage.k8s.io/StorageClass"]
+	src := smallSource(map[APIResource][]unstructured.Unstructured{
+		deploy: {obj("apps/v1", "Deployment", "ns-a", "web", "kubectl-client-side-apply", nil, nil),
+			obj("apps/v1", "Deployment", "ns-a", "other", "kubectl-client-side-apply", nil, nil)},
+		svc: {obj("v1", "Service", "ns-a", "web", "argocd-controller", map[string]string{"argocd.argoproj.io/instance": "web"},
+			map[string]any{"spec": map[string]any{"ports": []any{map[string]any{"port": int64(80)}}}})},
+		sc: {obj("storage.k8s.io/v1", "StorageClass", "", "fast", "kubectl-create", nil, map[string]any{"provisioner": "csi.example.com"})},
+		applicationAPI: {
+			application("web", "https://kubernetes.default.svc",
+				map[string]any{"group": "apps", "kind": "Deployment", "namespace": "ns-a", "name": "web"},
+				map[string]any{"kind": "Service", "namespace": "ns-a", "name": "web"},
+				map[string]any{"group": "storage.k8s.io", "kind": "StorageClass", "name": "fast"},
+				map[string]any{"group": "apps", "kind": "Deployment", "namespace": "ns-a", "name": "not-collected"}),
+			// a remote cluster's objects share names with local ones: not attributed
+			application("remote", "https://api.remote.example.com:6443",
+				map[string]any{"group": "apps", "kind": "Deployment", "namespace": "ns-a", "name": "other"}),
+		},
+	})
+	snap, err := Collect(context.Background(), src, Options{Context: "lab", ToolVersion: "test", CRDs: true, Now: fixedNow})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]string{
+		"apps/Deployment/ns-a/web":                     MgrArgoCD,
+		"core/Service/ns-a/web":                        MgrArgoCD,
+		"storage.k8s.io/StorageClass/_/fast":           MgrArgoCD,
+		"apps/Deployment/ns-a/other":                   MgrKubectl,
+		"argoproj.io/Application/openshift-gitops/web": MgrKubectl,
+	} {
+		if got := find(t, snap, id).Manager; got != want {
+			t.Errorf("%s manager = %s, want %s", id, got, want)
+		}
+	}
+	want := snapshot.ArgoCD{Applications: 2, Remote: 1, Managed: 3, FromStatus: 2}
+	if a := snap.Cluster.ArgoCD; a == nil || *a != want {
+		t.Errorf("argocd = %+v, want %+v", a, want)
+	}
+}
+
+// With the Application kind served and nothing attributed, the snapshot says so; without the
+// kind, it says nothing.
+func TestArgoCDInstalledNothingManaged(t *testing.T) {
+	src := smallSource(map[APIResource][]unstructured.Unstructured{
+		resourceOf["apps/Deployment"]: {obj("apps/v1", "Deployment", "ns-a", "web", "kubectl-client-side-apply", nil, nil)},
+		applicationAPI:                nil,
+	})
+	snap, err := Collect(context.Background(), src, Options{Context: "lab", ToolVersion: "test", CRDs: true, Now: fixedNow})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := snap.Cluster.ArgoCD; a == nil || *a != (snapshot.ArgoCD{}) {
+		t.Errorf("argocd = %+v, want installed with nothing managed", a)
+	}
+	if a := collectFixture(t).Cluster.ArgoCD; a != nil {
+		t.Errorf("fixture without Argo CD: argocd = %+v", a)
+	}
+}
+
+func TestLocalDestination(t *testing.T) {
+	for dest, want := range map[[2]string]bool{
+		{"https://kubernetes.default.svc", ""}:      true,
+		{"https://kubernetes.default.svc/", ""}:     true,
+		{"", "in-cluster"}:                          true,
+		{"", ""}:                                    true,
+		{"https://api.remote.example.com:6443", ""}: false,
+		{"", "remote"}:                              false,
+	} {
+		if got := localDestination(map[string]any{"server": dest[0], "name": dest[1]}); got != want {
+			t.Errorf("%v: local %v, want %v", dest, got, want)
+		}
 	}
 }
