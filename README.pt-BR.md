@@ -223,7 +223,9 @@ Visão de comparação entre `kuberito-source` e `kuberito-target`:
 | `kubestrata summary -c source` | resumo de migração em Markdown (ou JSON): recursos por categoria e kind, nodes por tipo de instância e zona, managers, maiores namespaces, kinds em fim de vida, objetos sem o dono esperado, cobertura de times, Argo CD |
 | `kubestrata` | TUI interativa (planejada) |
 
-`--format json` imprime um documento para máquina com `schema_version` 1. `--redact` mascara IDs
+`--format json` imprime um documento para máquina com `schema_version` 1, descrito pelos JSON
+Schemas em [`schemas/`](schemas/); o [docs/compatibility.pt-BR.md](docs/compatibility.pt-BR.md) diz o
+que ainda pode mudar antes da 1.0. `--redact` mascara IDs
 de conta AWS, hosts de endpoint EKS/AKS, domínios de cluster OpenShift (`api.redacted:6443`,
 `web.apps.redacted`), o host da API nos nomes de contexto do `oc login` e nomes de time tirados de
 `openshift.io/requester` (nomes de usuário) na saída e no site; o cache guarda os valores reais.

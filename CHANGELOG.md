@@ -94,6 +94,11 @@ All notable changes to this project are documented here. Versions follow
 - CI measures unit test coverage (printed in the job summary, no threshold yet), and
   `scorecard.yml` runs OpenSSF Scorecard on every push to `main` and weekly, with results in code
   scanning and the Scorecard badge in the README.
+- JSON Schemas (draft 2020-12) for every JSON output in [`schemas/`](schemas/): snapshot, contexts,
+  collect, cache ls, render, compare, diff and summary. `go test ./schemas` runs the CLI on rich
+  fixtures and checks every output strictly against them, and the lab e2e checks the real
+  snapshots and comparison. [docs/compatibility.md](docs/compatibility.md) (EN/PT-BR) says what
+  `schema_version` 1 guarantees, what may change before 1.0 and the policy proposed from 1.0.
 - CI: `lab.yml` runs the end-to-end tests on a kuberito lab (`kuberito up --profile full`,
   `make lab-test`, `make page-check`) on pull requests, pushes to `main`, weekly and on demand,
   with kuberito installed from its release (version pinned, checksum and cosign signature

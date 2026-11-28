@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kubestrata/kubestrata/blob/main/schemas/collect.schema.json",
+  "title": "kubestrata collect --format json",
+  "description": "One result per context.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Version of this document. Consumers refuse a higher value than they support."
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "collected",
+              "fresh",
+              "failed"
+            ]
+          },
+          "cluster_id": {
+            "type": "string"
+          },
+          "distro": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "resources": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "errors": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "collected_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "seconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "path": {
+            "type": "string",
+            "description": "Cached snapshot file."
+          },
+          "snapshot_out": {
+            "type": "string",
+            "description": "Plain JSON copy written by --snapshot-out."
+          },
+          "team_coverage": {
+            "$ref": "#/$defs/teamCoverage"
+          },
+          "message": {
+            "type": "string",
+            "description": "Why the collection failed."
+          }
+        },
+        "required": [
+          "context",
+          "errors",
+          "resources",
+          "seconds",
+          "status"
+        ]
+      }
+    }
+  },
+  "required": [
+    "results",
+    "schema_version"
+  ],
+  "$defs": {
+    "teamCoverage": {
+      "type": "object",
+      "properties": {
+        "namespaces": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Namespaces outside system namespaces."
+        },
+        "namespaces_with_team": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "resources": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Resources in those namespaces (cluster-scoped ones left out)."
+        },
+        "resources_with_team": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "namespaces",
+        "namespaces_with_team",
+        "resources",
+        "resources_with_team"
+      ],
+      "description": "What has a team, outside system namespaces."
+    }
+  }
+}

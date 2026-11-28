@@ -1,0 +1,441 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kubestrata/kubestrata/blob/main/schemas/snapshot.schema.json",
+  "title": "kubestrata snapshot",
+  "description": "One read-only, sanitized inventory of one cluster: the cache files, collect --snapshot-out and the site's json/<cluster_id>.json.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Version of this document. Consumers refuse a higher value than they support."
+    },
+    "tool": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ]
+    },
+    "collected_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "cluster": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{12}$",
+          "description": "sha256(server URL + kube-system UID)[:12]."
+        },
+        "context": {
+          "type": "string"
+        },
+        "server_host": {
+          "type": "string"
+        },
+        "distro": {
+          "type": "string"
+        },
+        "distro_signals": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "version": {
+          "type": "string"
+        },
+        "nodes": {
+          "$ref": "#/$defs/nodeSummary"
+        },
+        "argocd": {
+          "$ref": "#/$defs/argocd"
+        }
+      },
+      "required": [
+        "context",
+        "distro",
+        "id",
+        "nodes",
+        "server_host",
+        "version"
+      ]
+    },
+    "scope": {
+      "type": "object",
+      "properties": {
+        "kinds": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "group/Kind collected."
+        },
+        "skipped_kinds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "group/Kind left out on purpose (collect --skip-kinds, --no-secrets)."
+        },
+        "system_ns": {
+          "type": "string",
+          "description": "Regexp of the system namespaces."
+        },
+        "team_keys": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "team_from_ns": {
+          "type": "string",
+          "description": "collect --team-from-ns."
+        },
+        "requester_ignore": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "openshift.io/requester users that name no team."
+        }
+      },
+      "required": [
+        "kinds",
+        "system_ns",
+        "team_keys"
+      ]
+    },
+    "namespaces": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "$ref": "#/$defs/namespace"
+      }
+    },
+    "resources": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "$ref": "#/$defs/resource"
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/edge"
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/error"
+      }
+    }
+  },
+  "required": [
+    "cluster",
+    "collected_at",
+    "edges",
+    "errors",
+    "namespaces",
+    "resources",
+    "schema_version",
+    "scope",
+    "tool"
+  ],
+  "$defs": {
+    "nodeSummary": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of nodes."
+        },
+        "arch": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "description": "Nodes per CPU architecture."
+        },
+        "instance_types": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "description": "Nodes per instance type (node.kubernetes.io/instance-type)."
+        },
+        "capacity_types": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "description": "Nodes per capacity type (on-demand, spot, ...)."
+        },
+        "zones": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Zones of the nodes, sorted."
+        },
+        "zone_counts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "description": "Nodes per zone (topology.kubernetes.io/zone)."
+        },
+        "kubelet_versions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Kubelet versions, sorted."
+        }
+      },
+      "required": [
+        "count"
+      ],
+      "description": "Nodes, summarized: nodes are not inventory items."
+    },
+    "argocd": {
+      "type": "object",
+      "properties": {
+        "applications": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Argo CD Applications collected."
+        },
+        "remote": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Applications that deploy to another cluster (their status is not used)."
+        },
+        "managed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Resources with manager argocd. 0 means installed, no managed objects found."
+        },
+        "from_status": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Resources found only in the status.resources of a local Application."
+        }
+      },
+      "required": [
+        "applications",
+        "managed"
+      ],
+      "description": "Set when the cluster serves the Argo CD Application kind."
+    },
+    "teamCoverage": {
+      "type": "object",
+      "properties": {
+        "namespaces": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Namespaces outside system namespaces."
+        },
+        "namespaces_with_team": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "resources": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Resources in those namespaces (cluster-scoped ones left out)."
+        },
+        "resources_with_team": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "namespaces",
+        "namespaces_with_team",
+        "resources",
+        "resources_with_team"
+      ],
+      "description": "What has a team, outside system namespaces."
+    },
+    "namespace": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "team": {
+          "type": "string",
+          "description": "Team of the namespace."
+        },
+        "team_from": {
+          "type": "string",
+          "description": "Label or annotation key that named the team, or namespace-name (collect --team-from-ns)."
+        },
+        "system": {
+          "type": "boolean",
+          "description": "Matches collect --system-ns: collected, hidden by default."
+        },
+        "created": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "created",
+        "name"
+      ]
+    },
+    "resource": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Identity key group/Kind/namespace/name (core for the core group, _ for cluster-scoped)."
+        },
+        "group": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "cat": {
+          "type": "string",
+          "description": "Category: workload, network, config, storage, policy or crd. Open set: tolerate new values."
+        },
+        "ns": {
+          "type": "string",
+          "description": "Namespace; absent for cluster-scoped resources."
+        },
+        "name": {
+          "type": "string"
+        },
+        "created": {
+          "type": "string",
+          "format": "date-time",
+          "description": "metadata.creationTimestamp."
+        },
+        "changed": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Newest non-status managedFields time."
+        },
+        "manager": {
+          "type": "string",
+          "description": "How the object got into the cluster: argocd, flux, helm, kapp, terraform, operator, kubectl, console, platform, other or unknown. Open set: tolerate new values."
+        },
+        "app": {
+          "type": "string"
+        },
+        "team": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "string",
+          "description": "Id of the controller owner, when it was collected."
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Labels, as on the object."
+        },
+        "facts": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Projected facts of the kind. Keys and values depend on the kind; the volatile ones stay out of the fingerprint."
+        },
+        "fp": {
+          "type": "string",
+          "description": "Fingerprint: hash of the kind and its non-volatile facts."
+        },
+        "platform": {
+          "type": "boolean",
+          "description": "A custom resource of the cluster platform (OpenShift cluster operators)."
+        }
+      },
+      "required": [
+        "cat",
+        "created",
+        "group",
+        "id",
+        "kind",
+        "manager",
+        "name",
+        "version"
+      ]
+    },
+    "edge": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "rel": {
+          "type": "string",
+          "description": "routes, selects, mounts, env-from, uses-sa, pull-secret, owns, binds, tls, scales, grants, attaches. Open set."
+        }
+      },
+      "required": [
+        "from",
+        "rel",
+        "to"
+      ]
+    },
+    "error": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "ns": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "reason"
+      ]
+    }
+  }
+}

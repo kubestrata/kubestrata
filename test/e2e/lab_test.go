@@ -22,6 +22,7 @@ import (
 	"github.com/kubestrata/kubestrata/internal/kube"
 	"github.com/kubestrata/kubestrata/internal/render"
 	"github.com/kubestrata/kubestrata/internal/snapshot"
+	"github.com/kubestrata/kubestrata/schemas"
 )
 
 // Values the lab seeds on purpose; none may reach a snapshot.
@@ -256,6 +257,16 @@ func TestLabCompare(t *testing.T) {
 	var doc compare.Result
 	if err := json.Unmarshal(b, &doc); err != nil || doc.SchemaVersion != 1 || len(doc.Items) != len(res.Items) {
 		t.Fatalf("json/compare.json: schema %d, %d items, err %v", doc.SchemaVersion, len(doc.Items), err)
+	}
+	// the real documents of the lab match the published schemas
+	if err := schemas.Check("compare", b); err != nil {
+		t.Error(err)
+	}
+	for _, s := range []*snapshot.Snapshot{src, tgt} {
+		raw, _ := json.Marshal(s)
+		if err := schemas.Check("snapshot", raw); err != nil {
+			t.Errorf("%s: %v", s.Cluster.Context, err)
+		}
 	}
 }
 

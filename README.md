@@ -224,7 +224,9 @@ Compare view of `kuberito-source` and `kuberito-target`:
 | `kubestrata summary -c source` | migration summary as Markdown (or JSON): resources by category and kind, nodes by instance type and zone, managers, biggest namespaces, end-of-life kinds, objects without an expected owner, team coverage, Argo CD |
 | `kubestrata` | interactive TUI (planned) |
 
-`--format json` prints a machine-readable document with `schema_version` 1. `--redact` masks AWS
+`--format json` prints a machine-readable document with `schema_version` 1, described by the JSON
+Schemas in [`schemas/`](schemas/); [docs/compatibility.md](docs/compatibility.md) says what may still
+change before 1.0. `--redact` masks AWS
 account ids, EKS/AKS endpoint hosts, OpenShift cluster domains (`api.redacted:6443`,
 `web.apps.redacted`), the API host in `oc login` context names and team names taken from
 `openshift.io/requester` (user names) in the output and the site; the cache keeps the real values.

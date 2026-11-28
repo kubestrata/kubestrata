@@ -281,7 +281,9 @@ fingerprint, so a change of tool alone is not a drift.
 
 Edges are computed in Go, not in the browser. A reference to an object that does not exist goes to
 `facts.missing_refs`; a Service whose selector matches no workload gets `facts.selects_none`. A
-consumer that receives a higher `schema_version` than it supports refuses the document.
+consumer that receives a higher `schema_version` than it supports refuses the document. Every JSON
+document has a JSON Schema in `schemas/`, checked against real outputs by the tests; the rules of
+`schema_version` 1 are in [compatibility.md](compatibility.md).
 
 Pods, ReplicaSets, ReplicationControllers and Jobs are folded into the nearest shown owner
 (`pods`, `ready`, `restarts`, `pod_newest`, `pod_oldest`, `archs`, `last_rollout`, `jobs`,

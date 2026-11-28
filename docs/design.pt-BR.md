@@ -285,7 +285,8 @@ então uma troca só de ferramenta não é drift.
 As arestas são calculadas em Go, não no navegador. Referência a objeto que não existe vai para
 `facts.missing_refs`; Service cujo selector não casa com nenhum workload ganha
 `facts.selects_none`. Consumidor que recebe `schema_version` maior que o suportado recusa o
-documento.
+documento. Todo documento JSON tem um JSON Schema em `schemas/`, conferido contra saídas reais pelos
+testes; as regras do `schema_version` 1 estão em [compatibility.pt-BR.md](compatibility.pt-BR.md).
 
 Pods, ReplicaSets, ReplicationControllers e Jobs são agregados no dono exibido mais próximo
 (`pods`, `ready`, `restarts`, `pod_newest`, `pod_oldest`, `archs`, `last_rollout`, `jobs`,
